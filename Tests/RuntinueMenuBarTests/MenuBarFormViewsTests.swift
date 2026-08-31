@@ -6,6 +6,57 @@ import XCTest
 
 @MainActor
 final class MenuBarFormViewsTests: XCTestCase {
+  func testRememberedHotspotIsKeptWhileConnectedToAnotherNetwork() throws {
+    _ = NSApplication.shared
+    let form = TripConfigurationView(
+      rememberedHotspotSSID: "Fixture Phone", currentWiFiSSID: "Office"
+    )
+    let current: NSTextField = try control("runtinue.trip.currentWiFi", in: form)
+    XCTAssertEqual(current.stringValue, "Office")
+    XCTAssertEqual(try form.input.makeRequest().expectedHotspotSSID, "Fixture Phone")
+  }
+
+  func testCurrentWiFiNameIsUsedOnlyAfterExplicitSelection() throws {
+    _ = NSApplication.shared
+    let form = TripConfigurationView(currentWiFiSSID: "Fixture Phone")
+    let useCurrent: NSButton = try control("runtinue.trip.useCurrentWiFi", in: form)
+    XCTAssertEqual(form.input.hotspotSSID, "")
+    XCTAssertTrue(useCurrent.isEnabled)
+    XCTAssertEqual(useCurrent.accessibilityLabel(), "현재 Wi-Fi 이름 사용")
+
+    _ = useCurrent.sendAction(useCurrent.action, to: useCurrent.target)
+
+    XCTAssertEqual(try form.input.makeRequest().expectedHotspotSSID, "Fixture Phone")
+  }
+
+  func testUnavailableWiFiNameDisablesTheShortcut() throws {
+    _ = NSApplication.shared
+    let form = TripConfigurationView(rememberedHotspotSSID: "Fixture Phone")
+    let useCurrent: NSButton = try control("runtinue.trip.useCurrentWiFi", in: form)
+    XCTAssertFalse(useCurrent.isEnabled)
+    XCTAssertEqual(form.input.hotspotSSID, "Fixture Phone")
+  }
+
+  func testUSBSelectionDisablesCurrentWiFiShortcutWithoutErasingTheName() throws {
+    _ = NSApplication.shared
+    let form = TripConfigurationView(
+      rememberedHotspotSSID: "Saved Phone", currentWiFiSSID: "Current Phone"
+    )
+    let target: NSPopUpButton = try control("runtinue.trip.target", in: form)
+    let useCurrent: NSButton = try control("runtinue.trip.useCurrentWiFi", in: form)
+    target.selectItem(at: 1)
+    _ = target.sendAction(target.action, to: target.target)
+    XCTAssertFalse(useCurrent.isEnabled)
+    _ = useCurrent.sendAction(useCurrent.action, to: useCurrent.target)
+    XCTAssertEqual(form.input.hotspotSSID, "Saved Phone")
+    XCTAssertNil(try form.input.makeRequest().expectedHotspotSSID)
+
+    target.selectItem(at: 0)
+    _ = target.sendAction(target.action, to: target.target)
+    XCTAssertTrue(useCurrent.isEnabled)
+    XCTAssertEqual(form.input.hotspotSSID, "Saved Phone")
+  }
+
   func testTripControlsSwitchToUSBAndProduceTheSameWireRequest() throws {
     _ = NSApplication.shared
     let form = TripConfigurationView()

@@ -10,13 +10,13 @@ public struct MacNetworkProbe: Sendable {
     self.clock = clock
   }
 
+  // 입력 편의를 위한 이름이다. 보호 판정에는 경로와 인터넷을 포함한 snapshot을 사용한다.
+  public func currentWiFiSSID() -> String? {
+    Self.wifiInterface()?.ssid()
+  }
+
   public func snapshot(confirmInternet: Bool = false) async -> NetworkSnapshot {
-    let client = CWWiFiClient.shared()
-    let wifiInterface =
-      client.interface()
-      ?? client.interfaceNames()?.first.flatMap {
-        client.interface(withName: $0)
-      }
+    let wifiInterface = Self.wifiInterface()
     let route = Self.readDefaultRoute()
     let primaryInterface = route.interfaceName ?? wifiInterface?.interfaceName
     let ssid =
@@ -39,6 +39,14 @@ public struct MacNetworkProbe: Sendable {
       internetReachability: internetReachability,
       capturedAt: clock.now()
     )
+  }
+
+  private static func wifiInterface() -> CWInterface? {
+    let client = CWWiFiClient.shared()
+    return client.interface()
+      ?? client.interfaceNames()?.first.flatMap {
+        client.interface(withName: $0)
+      }
   }
 
   private static func readDefaultRoute() -> (interfaceName: String?, gateway: String?) {
@@ -112,11 +120,12 @@ enum InternetProbeResponseValidator {
       httpResponse.url?.scheme == expectedURL.scheme,
       httpResponse.url?.host?.caseInsensitiveCompare(expectedURL.host ?? "") == .orderedSame,
       httpResponse.url?.path == expectedURL.path,
-      let body = String(data: data, encoding: .utf8),
-      body.trimmingCharacters(in: .whitespacesAndNewlines) == "Success"
+      let body = String(data: data, encoding: .utf8)
     else {
       return false
     }
-    return true
+    let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    let appleSuccessHTML = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"
+    return trimmedBody == "Success" || trimmedBody == appleSuccessHTML
   }
 }

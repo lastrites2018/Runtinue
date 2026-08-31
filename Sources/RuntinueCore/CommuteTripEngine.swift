@@ -216,7 +216,9 @@ public struct CommuteTripEngine: Sendable {
     }
 
     let hotspotPolicy = HotspotTransitionPolicy(
-      target: currentSession.request.networkTarget
+      target: currentSession.request.networkTarget,
+      // Wi-Fi는 현재 연결의 준비 상태로 판단한다. USB의 인터페이스 전환 조건은 유지한다.
+      requireNetworkIdentityChange: false
     )
     switch hotspotPolicy.evaluate(
       origin: currentSession.originNetwork,

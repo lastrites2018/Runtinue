@@ -5,6 +5,43 @@ import XCTest
 final class HotspotTransitionPolicyTests: XCTestCase {
   private let policy = HotspotTransitionPolicy(expectedSSID: "Jaewan iPhone")
 
+  func testReadinessModeRejectsMissingSSIDWrongSSIDRouteAndStaleSamples() {
+    let now = instant(seconds: 100)
+    let readiness = HotspotTransitionPolicy(
+      expectedSSID: "iPhone", requireNetworkIdentityChange: false
+    )
+    let origin = network(ssid: "iPhone", at: now)
+    let cases: [(NetworkSnapshot, HotspotWaitingReason)] = [
+      (network(ssid: nil, at: now), .ssidUnavailable),
+      (network(ssid: "Office", at: now), .unexpectedSSID(observed: "Office")),
+      (network(ssid: "iPhone", at: now, reachable: false), .routeUnavailable),
+      (network(ssid: "iPhone", at: instant(seconds: 84)), .staleSnapshot(age: .seconds(16))),
+      (network(ssid: "iPhone", at: instant(seconds: 101)), .snapshotFromFuture),
+    ]
+    for (current, expected) in cases {
+      XCTAssertEqual(readiness.evaluate(origin: origin, current: current, at: now), .waiting(expected))
+    }
+  }
+
+  func testReadinessModeRequiresAKnownCurrentInterface() {
+    let now = instant(seconds: 100)
+    let current = NetworkSnapshot(
+      ssid: "iPhone",
+      interfaceName: nil,
+      routeReachable: true,
+      internetReachability: .confirmed,
+      capturedAt: now
+    )
+    let readiness = HotspotTransitionPolicy(
+      expectedSSID: "iPhone", requireNetworkIdentityChange: false
+    )
+
+    XCTAssertEqual(
+      readiness.evaluate(origin: current, current: current, at: now),
+      .waiting(.interfaceUnavailable)
+    )
+  }
+
   func testTargetHotspotWithReachableRouteAndChangedSSIDIsReady() {
     let origin = network(ssid: "Office", at: instant(seconds: 10))
     let current = network(ssid: "Jaewan iPhone", at: instant(seconds: 20))

@@ -5,7 +5,7 @@ script_dir=${0:A:h}
 project_root=${script_dir:h}
 release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 distribution_root="${release_root}/distribution"
-version=${VERSION:-0.2.0}
+version=${VERSION:-0.2.1}
 build_number=${BUILD_NUMBER:-1}
 application_identity=${DEVELOPER_ID_APPLICATION:?DEVELOPER_ID_APPLICATION을 지정해야 합니다}
 

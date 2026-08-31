@@ -6,7 +6,7 @@ project_root=${script_dir:h}
 release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 distribution_root="${release_root}/distribution"
 payload_root="${release_root}/payload"
-version=${VERSION:-0.2.0}
+version=${VERSION:-0.2.1}
 development_package=${RUNTINUE_DEVELOPMENT_PACKAGE:-NO}
 [[ "${version}" =~ '^[0-9]+([.][0-9]+){1,3}$' ]] || {
   print -u2 "VERSION 형식이 올바르지 않음"
@@ -101,8 +101,19 @@ chmod 0644 \
   "${payload_root}/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
 chmod 0700 "${payload_root}/Library/Application Support/io.github.lastrites2018.runtinue/helper"
 
+# 미리 실행한 빌드 폴더의 앱으로 설치가 옮겨가지 않도록 목적지를 고정한다.
+component_plist="${release_root}/Runtinue-components.plist"
+/usr/bin/pkgbuild --analyze --root "${payload_root}" "${component_plist}"
+bundle_path=$(/usr/libexec/PlistBuddy -c 'Print :0:RootRelativeBundlePath' "${component_plist}")
+[[ "${bundle_path}" == "Applications/Runtinue.app" ]] || {
+  print -u2 "패키지 앱 경로가 예상과 달라 중단합니다"
+  exit 65
+}
+/usr/libexec/PlistBuddy -c 'Set :0:BundleIsRelocatable false' "${component_plist}"
+
 /usr/bin/pkgbuild \
   --root "${payload_root}" \
+  --component-plist "${component_plist}" \
   --scripts "${project_root}/Packaging/pkg-scripts" \
   --identifier "io.github.lastrites2018.runtinue.pkg" \
   --version "${version}" \

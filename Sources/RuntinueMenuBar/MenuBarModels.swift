@@ -44,23 +44,13 @@ struct TripFormInput: Equatable, Sendable {
     )
     let handoffTimeoutSeconds = try parseMinutes(
       handoffTimeoutMinutes,
-      field: "전환 대기 시간",
+      field: "연결 대기 시간",
       maximum: Self.maximumMinutes
     )
 
     switch target {
     case .wifiHotspot:
-      let normalizedSSID = hotspotSSID.trimmingCharacters(
-        in: .whitespacesAndNewlines
-      )
-      guard !normalizedSSID.isEmpty else {
-        throw MenuBarConfigurationError.hotspotRequired
-      }
-      guard normalizedSSID.utf8.count <= Self.maximumHotspotSSIDBytes else {
-        throw MenuBarConfigurationError.hotspotTooLong(
-          maximumBytes: Self.maximumHotspotSSIDBytes
-        )
-      }
+      let normalizedSSID = try Self.validatedHotspotSSID(hotspotSSID)
       return StartTripWireRequest(
         expectedHotspotSSID: normalizedSSID,
         hotspotHandoffTimeoutSeconds: handoffTimeoutSeconds,
@@ -73,6 +63,17 @@ struct TripFormInput: Equatable, Sendable {
         hardCapSeconds: hardCapSeconds
       )
     }
+  }
+
+  static func validatedHotspotSSID(_ value: String) throws -> String {
+    let normalizedSSID = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedSSID.isEmpty else {
+      throw MenuBarConfigurationError.hotspotRequired
+    }
+    guard normalizedSSID.utf8.count <= maximumHotspotSSIDBytes else {
+      throw MenuBarConfigurationError.hotspotTooLong(maximumBytes: maximumHotspotSSIDBytes)
+    }
+    return normalizedSSID
   }
 }
 
@@ -179,7 +180,7 @@ struct MenuBarPresentation: Equatable, Sendable {
       }
     case .waitingForHotspot:
       statusIndicator = "…"
-      summary = "핫스팟 전환 대기, 덮개 닫기 금지"
+      summary = "핫스팟 연결 확인 중, 덮개 닫기 금지"
     case .acquiring:
       statusIndicator = "…"
       summary = "보호 확인 중, 덮개 닫기 금지"

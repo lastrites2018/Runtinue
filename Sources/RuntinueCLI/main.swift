@@ -378,7 +378,7 @@ struct RuntinueCLI {
         print("덮개를 열어 둔 상태에서만 절전 방지가 유지됩니다.")
       }
     case .waitingForHotspot:
-      print("핫스팟 전환을 기다리는 중입니다.")
+      print("핫스팟 연결을 확인하는 중입니다.")
       print("아직 덮개를 닫지 마세요.")
     case .acquiring:
       print("보호 설정을 확인하는 중입니다.")
@@ -551,7 +551,8 @@ struct RuntinueCLI {
         runtinue watch-handoff --hotspot <SSID> [--timeout-seconds <초>]
 
       시간 예시: 90m, 2h, 5400s
-      trip start는 핫스팟 전환 뒤 유한한 closed-lid 보호 lease를 요청합니다.
+      trip start는 지정한 핫스팟 연결을 확인한 뒤 유한한 closed-lid 보호 lease를 요청합니다.
+      Wi-Fi 핫스팟에 이미 연결된 상태에서도 시작할 수 있습니다.
       adaptive enable은 서명된 hook의 활동 신호가 있을 때만 lease를 획득합니다.
       desk enable은 기본적으로 덮개가 열린 동안 process-owned assertion을 사용합니다.
       --closed-lid를 지정한 경우에만 privileged lease를 사용합니다.
