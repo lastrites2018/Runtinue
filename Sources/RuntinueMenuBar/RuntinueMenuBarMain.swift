@@ -23,6 +23,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private let client = SupervisorXPCClient()
   private let networkProbe = MacNetworkProbe()
   private let wifiAuthorization = WiFiLocationAuthorization()
+  private let tripPreferences = TripPreferences()
   private let statusItem = NSStatusBar.system.statusItem(
     withLength: NSStatusItem.variableLength
   )
@@ -235,10 +236,13 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   }
 
   @objc private func startTrip() {
-    let form = TripConfigurationView()
+    let form = TripConfigurationView(
+      rememberedHotspotSSID: tripPreferences.lastHotspotSSID,
+      currentWiFiSSID: wifiAuthorization.isAuthorized ? networkProbe.currentWiFiSSID() : nil
+    )
     let alert = configurationAlert(
       title: "통근 보호 시작",
-      message: "회사 또는 집 네트워크에서 이동할 대상을 지정하세요.",
+      message: "이동 중 사용할 핫스팟을 확인하세요. 이미 연결되어 있어도 시작할 수 있습니다.",
       accessoryView: form
     )
     alert.window.initialFirstResponder = form.initialFirstResponder
@@ -248,6 +252,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
 
     do {
       let request = try form.input.makeRequest()
+      tripPreferences.remember(request)
       if request.networkTargetKind == .wifiHotspot, !wifiAuthorization.isAuthorized {
         wifiAuthorization.request()
         updateWiFiPermissionItem()

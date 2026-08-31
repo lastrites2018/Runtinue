@@ -9,6 +9,37 @@ import XCTest
 
 @MainActor
 final class CommuteJourneyTests: XCTestCase {
+  func testTripCanStartOnAnAlreadyConnectedTrustedHotspot() async throws {
+    let clock = JourneyClock()
+    let power = JourneyPowerBackend()
+    let helper = LeaseActor(
+      powerBackend: power,
+      store: JourneyLeaseStore(),
+      monotonicClock: clock,
+      wallClock: clock
+    )
+    _ = await helper.start()
+    let connected = journeySnapshot(
+      ssid: "iPhone", routeReachable: true, internet: .confirmed, clock: clock
+    )
+    let runtime = makeRuntime(
+      helper: helper, power: power, clock: clock, snapshots: [connected, connected]
+    )
+
+    await runtime.recordWiFiObservation(ssid: "iPhone", interfaceName: "en0")
+    _ = try await runtime.startTrip(
+      expectedHotspotSSID: "iPhone",
+      hotspotHandoffTimeout: .seconds(900),
+      hardCap: .seconds(3_600)
+    )
+    let status = await runtime.monitorOnce()
+
+    XCTAssertEqual(status.verdict, .protected)
+    XCTAssertTrue(status.closedLidAllowed)
+    let writes = await power.writes()
+    XCTAssertEqual(writes, [.disabled])
+  }
+
   func testTripWaitsForFreshTrustedSSIDRouteAndInternetBeforeEnablingLease() async throws {
     let clock = JourneyClock()
     let power = JourneyPowerBackend()

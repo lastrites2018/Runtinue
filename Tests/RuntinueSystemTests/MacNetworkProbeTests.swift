@@ -8,6 +8,37 @@ final class MacNetworkProbeTests: XCTestCase {
     string: "https://captive.apple.com/hotspot-detect.html"
   )!
 
+  func testAppleHTMLSuccessResponseConfirmsInternet() throws {
+    let response = try XCTUnwrap(
+      HTTPURLResponse(
+        url: expectedURL,
+        statusCode: 200,
+        httpVersion: nil,
+        headerFields: ["Content-Type": "text/html"]
+      )
+    )
+    let body = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>\n"
+
+    XCTAssertTrue(
+      InternetProbeResponseValidator.confirmsInternet(
+        data: Data(body.utf8), response: response, expectedURL: expectedURL
+      )
+    )
+  }
+
+  func testHTMLWithSuccessAndSignInContentIsRejected() throws {
+    let response = try XCTUnwrap(
+      HTTPURLResponse(url: expectedURL, statusCode: 200, httpVersion: nil, headerFields: nil)
+    )
+    let body = "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Sign in. Success</BODY></HTML>"
+
+    XCTAssertFalse(
+      InternetProbeResponseValidator.confirmsInternet(
+        data: Data(body.utf8), response: response, expectedURL: expectedURL
+      )
+    )
+  }
+
   func testExactSuccessResponseConfirmsInternet() throws {
     let response = try XCTUnwrap(
       HTTPURLResponse(

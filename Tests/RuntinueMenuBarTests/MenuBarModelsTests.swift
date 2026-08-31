@@ -285,7 +285,7 @@ final class MenuBarModelsTests: XCTestCase {
       status: status(verdict: .waitingForHotspot, closedLidAllowed: false)
     )
 
-    XCTAssertEqual(presentation.summary, "핫스팟 전환 대기, 덮개 닫기 금지")
+    XCTAssertEqual(presentation.summary, "핫스팟 연결 확인 중, 덮개 닫기 금지")
   }
 
   func testSafetyReleasePresentationsExplicitlyForbidClosingLid() {

@@ -5,7 +5,7 @@ script_dir=${0:A:h}
 project_root=${script_dir:h}
 release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 release_root=${release_root:A}
-version=${VERSION:-0.2.0}
+version=${VERSION:-0.2.1}
 notary_profile=${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE을 지정해야 합니다}
 pkg="${release_root}/Runtinue-${version}.pkg"
 

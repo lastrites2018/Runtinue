@@ -85,6 +85,9 @@ public struct HotspotTransitionPolicy: Equatable, Sendable {
       guard currentSSID == expectedSSID else {
         return .waiting(.unexpectedSSID(observed: current.ssid))
       }
+      guard let interface = current.interfaceName, !interface.isEmpty else {
+        return .waiting(.interfaceUnavailable)
+      }
     case .usbTethering:
       guard current.ssid == nil else {
         return .waiting(.unexpectedSSID(observed: current.ssid))

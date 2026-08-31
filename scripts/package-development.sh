@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 project_root=${script_dir:h}
-version=${VERSION:-0.2.0}
+version=${VERSION:-0.2.1}
 release_root=${RUNTINUE_RELEASE_ROOT:-${project_root}/.release}
 release_root=${release_root:A}
 export RUNTINUE_DEVELOPMENT_PACKAGE=YES

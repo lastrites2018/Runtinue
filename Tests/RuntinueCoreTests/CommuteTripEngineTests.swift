@@ -3,6 +3,86 @@ import XCTest
 @testable import RuntinueCore
 
 final class CommuteTripEngineTests: XCTestCase {
+  func testAlreadyConnectedHotspotCanAcquireWithoutAnotherHandoff() throws {
+    var engine = CommuteTripEngine()
+    let start = instant(seconds: 100)
+    let sessionID = UUID()
+    let request = CommuteTripRequest(expectedHotspotSSID: "iPhone")
+    try engine.arm(
+      request,
+      originNetwork: network(ssid: "iPhone", at: start),
+      device: device(at: start),
+      at: start,
+      sessionID: sessionID
+    )
+
+    let commands = engine.observeNetwork(
+      network(ssid: "iPhone", at: instant(seconds: 101)),
+      at: instant(seconds: 101)
+    )
+
+    XCTAssertEqual(commands, [.acquire(sessionID: sessionID, hardCap: request.hardCap)])
+    XCTAssertEqual(engine.phase, .acquiringLease)
+  }
+
+  func testAlreadyConnectedHotspotStillRequiresConfirmedInternet() throws {
+    for internet: InternetReachability in [.unchecked, .unavailable] {
+      var engine = CommuteTripEngine()
+      let start = instant(seconds: 100)
+      try engine.arm(
+        CommuteTripRequest(expectedHotspotSSID: "iPhone"),
+        originNetwork: network(ssid: "iPhone", at: start),
+        device: device(at: start),
+        at: start
+      )
+
+      let commands = engine.observeNetwork(
+        network(ssid: "iPhone", at: start, internet: internet),
+        at: start
+      )
+
+      XCTAssertTrue(commands.isEmpty)
+      XCTAssertEqual(engine.phase, .waitingForHotspot)
+      XCTAssertEqual(
+        engine.status.hotspotWaitingReason,
+        internet == .unchecked ? .internetUnchecked : .internetUnavailable
+      )
+    }
+  }
+
+  func testAlreadyConnectedHotspotDoesNotBypassThermalCutoff() throws {
+    var engine = CommuteTripEngine()
+    let start = instant(seconds: 100)
+    try engine.arm(
+      CommuteTripRequest(expectedHotspotSSID: "iPhone"),
+      originNetwork: network(ssid: "iPhone", at: start),
+      device: device(at: start, thermal: .fair, lid: .closed),
+      at: start
+    )
+
+    XCTAssertTrue(engine.observeNetwork(network(ssid: "iPhone", at: start), at: start).isEmpty)
+    XCTAssertEqual(engine.phase, .ended)
+    XCTAssertEqual(
+      engine.status.stopReason,
+      .safety(.thermalLimitReached(observed: .fair, cutoff: .fair))
+    )
+  }
+
+  func testUnchangedUSBTetheringInterfaceStillWaits() throws {
+    var engine = CommuteTripEngine()
+    let start = instant(seconds: 100)
+    let connected = network(ssid: nil, at: start, interface: "en5")
+    try engine.arm(
+      CommuteTripRequest(networkTarget: .usbTethering),
+      originNetwork: connected,
+      device: device(at: start),
+      at: start
+    )
+
+    XCTAssertTrue(engine.observeNetwork(connected, at: start).isEmpty)
+    XCTAssertEqual(engine.status.hotspotWaitingReason, .networkIdentityUnchanged)
+  }
+
   func testHotspotHandoffAcquiresThenThermalTripReleases() throws {
     var engine = CommuteTripEngine()
     let sessionID = UUID()

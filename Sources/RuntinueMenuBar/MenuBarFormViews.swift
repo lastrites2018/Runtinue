@@ -5,29 +5,54 @@ final class TripConfigurationView: NSView {
   private let targetPopUp = NSPopUpButton()
   private let hotspotLabel = NSTextField(labelWithString: "핫스팟 이름")
   private let hotspotField = NSTextField(string: "")
+  private let useCurrentWiFiButton = NSButton(title: "사용", target: nil, action: nil)
+  private let currentWiFiSSID: String?
   private let protectionField = NSTextField(string: "90")
   private let handoffTimeoutField = NSTextField(string: "15")
 
-  override init(frame frameRect: NSRect) {
-    super.init(frame: NSRect(x: 0, y: 0, width: 390, height: 170))
+  init(rememberedHotspotSSID: String? = nil, currentWiFiSSID: String? = nil) {
+    self.currentWiFiSSID = currentWiFiSSID.flatMap {
+      try? TripFormInput.validatedHotspotSSID($0)
+    }
+    super.init(frame: NSRect(x: 0, y: 0, width: 390, height: 235))
 
     targetPopUp.addItems(withTitles: ["Wi-Fi 핫스팟", "USB 테더링"])
     targetPopUp.target = self
     targetPopUp.action = #selector(targetChanged)
     hotspotField.placeholderString = "예: iPhone"
+    hotspotField.stringValue = rememberedHotspotSSID ?? ""
     targetPopUp.setAccessibilityIdentifier("runtinue.trip.target")
     hotspotField.setAccessibilityIdentifier("runtinue.trip.hotspot")
     protectionField.setAccessibilityIdentifier("runtinue.trip.duration")
     handoffTimeoutField.setAccessibilityIdentifier("runtinue.trip.handoff")
 
+    let currentWiFiLabel = NSTextField(
+      labelWithString: self.currentWiFiSSID ?? "이름을 읽을 수 없음"
+    )
+    currentWiFiLabel.lineBreakMode = .byTruncatingMiddle
+    currentWiFiLabel.toolTip = self.currentWiFiSSID
+    currentWiFiLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    currentWiFiLabel.setAccessibilityIdentifier("runtinue.trip.currentWiFi")
+    useCurrentWiFiButton.target = self
+    useCurrentWiFiButton.action = #selector(useCurrentWiFi)
+    useCurrentWiFiButton.toolTip = "현재 Wi-Fi 이름을 핫스팟 이름으로 사용"
+    useCurrentWiFiButton.setAccessibilityLabel("현재 Wi-Fi 이름 사용")
+    useCurrentWiFiButton.setAccessibilityIdentifier("runtinue.trip.useCurrentWiFi")
+    let currentWiFiRow = NSStackView(views: [currentWiFiLabel, useCurrentWiFiButton])
+    currentWiFiRow.orientation = .horizontal
+    currentWiFiRow.spacing = 6
+    currentWiFiRow.widthAnchor.constraint(equalToConstant: 210).isActive = true
+
     let stack = makeFormStack(
       rows: [
-        makeFormRow(label: "전환 대상", control: targetPopUp),
+        makeFormRow(label: "연결 방식", control: targetPopUp),
         makeFormRow(label: hotspotLabel, control: hotspotField),
+        makeFormRow(label: "현재 Wi-Fi", control: currentWiFiRow),
         makeFormRow(label: "보호 시간(분)", control: protectionField),
-        makeFormRow(label: "전환 대기(분)", control: handoffTimeoutField),
+        makeFormRow(label: "연결 대기(분)", control: handoffTimeoutField),
       ],
-      note: "핫스팟 또는 USB 전환과 인터넷 도달이 확인된 뒤에만 보호를 시작합니다."
+      note: "핫스팟에 연결한 뒤 시작해도 됩니다. 입력한 이름은 다음에도 기억합니다. "
+        + "USB 테더링은 연결 전환을 확인합니다."
     )
     addPinnedSubview(stack)
     targetChanged()
@@ -51,10 +76,18 @@ final class TripConfigurationView: NSView {
     hotspotField
   }
 
+  @objc private func useCurrentWiFi() {
+    guard targetPopUp.indexOfSelectedItem == 0, let currentWiFiSSID else {
+      return
+    }
+    hotspotField.stringValue = currentWiFiSSID
+  }
+
   @objc private func targetChanged() {
     let requiresSSID = targetPopUp.indexOfSelectedItem == 0
     hotspotLabel.textColor = requiresSSID ? .labelColor : .secondaryLabelColor
     hotspotField.isEnabled = requiresSSID
+    useCurrentWiFiButton.isEnabled = requiresSSID && currentWiFiSSID != nil
   }
 }
 
