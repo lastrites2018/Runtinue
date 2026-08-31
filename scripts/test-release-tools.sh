@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 project_root=${script_dir:h}
-work_root=$(/usr/bin/mktemp -d /tmp/safeclam-release-tool-tests.XXXXXX)
+work_root=$(/usr/bin/mktemp -d /tmp/runtinue-release-tool-tests.XXXXXX)
 cleanup() {
   /bin/rm -rf -- "${work_root}"
 }
@@ -22,18 +22,19 @@ expect_exit() {
   fi
 }
 
-fake_pkg="${work_root}/SafeClam-0.1.0.pkg"
+fake_pkg="${work_root}/Runtinue-0.2.0.pkg"
 /usr/bin/touch "${fake_pkg}"
 
 fixture_root="${work_root}/installed"
 fixture_manifest="${work_root}/fixture.manifest.json"
 mkdir -p \
   "${fixture_root}/usr/local/bin" \
-  "${fixture_root}/Applications/SafeClam.app/Contents/MacOS" \
-  "${fixture_root}/Applications/SafeClam.app/Contents/_CodeSignature" \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/bin" \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/helper" \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/supervisor" \
+  "${fixture_root}/Applications/Runtinue.app/Contents/MacOS" \
+  "${fixture_root}/Applications/Runtinue.app/Contents/Resources" \
+  "${fixture_root}/Applications/Runtinue.app/Contents/_CodeSignature" \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/bin" \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/helper" \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor" \
   "${fixture_root}/Library/LaunchDaemons" \
   "${fixture_root}/Library/LaunchAgents"
 
@@ -43,35 +44,37 @@ fixture_file() {
   print -r -- "${value}" > "${path}"
 }
 
-fixture_file "${fixture_root}/usr/local/bin/safeclam" safeclam
-fixture_file "${fixture_root}/usr/local/bin/safeclam-hook" safeclam-hook
-fixture_file "${fixture_root}/usr/local/bin/safeclam-activity" safeclam-activity
+fixture_file "${fixture_root}/usr/local/bin/runtinue" runtinue
+fixture_file "${fixture_root}/usr/local/bin/runtinue-hook" runtinue-hook
+fixture_file "${fixture_root}/usr/local/bin/runtinue-activity" runtinue-activity
 fixture_file \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/bin/safeclam-helper" \
-  safeclam-helper
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper" \
+  runtinue-helper
 fixture_file \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor" \
-  safeclam-supervisor
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor" \
+  runtinue-supervisor
 fixture_file \
-  "${fixture_root}/Applications/SafeClam.app/Contents/MacOS/safeclam-menubar" \
-  safeclam-menubar
-fixture_file "${fixture_root}/Applications/SafeClam.app/Contents/Info.plist" app-info
+  "${fixture_root}/Applications/Runtinue.app/Contents/MacOS/runtinue-menubar" \
+  runtinue-menubar
+fixture_file "${fixture_root}/Applications/Runtinue.app/Contents/Info.plist" app-info
+fixture_file "${fixture_root}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png" menu-icon
+fixture_file "${fixture_root}/Applications/Runtinue.app/Contents/Resources/Runtinue.icns" app-icon
 fixture_file \
-  "${fixture_root}/Applications/SafeClam.app/Contents/_CodeSignature/CodeResources" \
+  "${fixture_root}/Applications/Runtinue.app/Contents/_CodeSignature/CodeResources" \
   app-code-resources
-fixture_file "${fixture_root}/Library/LaunchDaemons/com.example.safeclam.helper.plist" helper-plist
-fixture_file "${fixture_root}/Library/LaunchAgents/com.example.safeclam.supervisor.plist" supervisor-plist
+fixture_file "${fixture_root}/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist" helper-plist
+fixture_file "${fixture_root}/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist" supervisor-plist
 fixture_file \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/uninstall-safeclam" \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue" \
   uninstall-script
 fixture_file \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/helper/supervisor.requirement" \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement" \
   supervisor-requirement
 fixture_file \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/supervisor/control.requirement" \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/control.requirement" \
   control-requirement
 fixture_file \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/supervisor/activity.requirement" \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement" \
   activity-requirement
 
 fixture_hash() {
@@ -83,15 +86,16 @@ fixture_plist="${work_root}/fixture.manifest.plist"
 /usr/bin/plutil -insert schemaVersion -integer 1 "${fixture_plist}"
 /usr/bin/plutil -insert kind -string development "${fixture_plist}"
 /usr/bin/plutil -insert package -dictionary "${fixture_plist}"
-/usr/bin/plutil -insert package.identifier -string com.example.safeclam.pkg "${fixture_plist}"
-/usr/bin/plutil -insert package.version -string 0.1.0 "${fixture_plist}"
+/usr/bin/plutil -insert package.identifier -string io.github.lastrites2018.runtinue.pkg "${fixture_plist}"
+/usr/bin/plutil -insert package.version -string 0.2.0 "${fixture_plist}"
 /usr/bin/plutil -insert package.sha256 -string \
   0000000000000000000000000000000000000000000000000000000000000000 "${fixture_plist}"
 /usr/bin/plutil -insert artifacts -dictionary "${fixture_plist}"
 /usr/bin/plutil -insert requirements -dictionary "${fixture_plist}"
 for fixture_key in \
-  safeclam safeclamHook safeclamActivity safeclamHelper safeclamSupervisor safeclamMenubar \
-  safeclamAppInfo safeclamAppCodeResources helperPlist supervisorPlist uninstallScript; do
+  runtinue runtinueHook runtinueActivity runtinueHelper runtinueSupervisor runtinueMenubar \
+  runtinueAppInfo runtinueAppCodeResources runtinueMenuIcon runtinueAppIcon \
+  helperPlist supervisorPlist uninstallScript; do
   /usr/bin/plutil -insert "artifacts.${fixture_key}" -dictionary "${fixture_plist}"
 done
 for fixture_key in helperSupervisor control activity; do
@@ -108,47 +112,65 @@ fixture_manifest_entry() {
   /usr/bin/plutil -insert "${key}.sha256" -string "${hash}" "${fixture_plist}"
 }
 
-fixture_manifest_entry artifacts.safeclam "${fixture_root}/usr/local/bin/safeclam"
-fixture_manifest_entry artifacts.safeclamHook "${fixture_root}/usr/local/bin/safeclam-hook"
-fixture_manifest_entry artifacts.safeclamActivity "${fixture_root}/usr/local/bin/safeclam-activity"
-fixture_manifest_entry artifacts.safeclamHelper \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/bin/safeclam-helper"
-fixture_manifest_entry artifacts.safeclamSupervisor \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor"
-fixture_manifest_entry artifacts.safeclamMenubar \
-  "${fixture_root}/Applications/SafeClam.app/Contents/MacOS/safeclam-menubar"
-fixture_manifest_entry artifacts.safeclamAppInfo \
-  "${fixture_root}/Applications/SafeClam.app/Contents/Info.plist"
-fixture_manifest_entry artifacts.safeclamAppCodeResources \
-  "${fixture_root}/Applications/SafeClam.app/Contents/_CodeSignature/CodeResources"
+fixture_manifest_entry artifacts.runtinue "${fixture_root}/usr/local/bin/runtinue"
+fixture_manifest_entry artifacts.runtinueHook "${fixture_root}/usr/local/bin/runtinue-hook"
+fixture_manifest_entry artifacts.runtinueActivity "${fixture_root}/usr/local/bin/runtinue-activity"
+fixture_manifest_entry artifacts.runtinueHelper \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper"
+fixture_manifest_entry artifacts.runtinueSupervisor \
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
+fixture_manifest_entry artifacts.runtinueMenubar \
+  "${fixture_root}/Applications/Runtinue.app/Contents/MacOS/runtinue-menubar"
+fixture_manifest_entry artifacts.runtinueAppInfo \
+  "${fixture_root}/Applications/Runtinue.app/Contents/Info.plist"
+fixture_manifest_entry artifacts.runtinueAppCodeResources \
+  "${fixture_root}/Applications/Runtinue.app/Contents/_CodeSignature/CodeResources"
+fixture_manifest_entry artifacts.runtinueMenuIcon \
+  "${fixture_root}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
+fixture_manifest_entry artifacts.runtinueAppIcon \
+  "${fixture_root}/Applications/Runtinue.app/Contents/Resources/Runtinue.icns"
 fixture_manifest_entry artifacts.helperPlist \
-  "${fixture_root}/Library/LaunchDaemons/com.example.safeclam.helper.plist"
+  "${fixture_root}/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist"
 fixture_manifest_entry artifacts.supervisorPlist \
-  "${fixture_root}/Library/LaunchAgents/com.example.safeclam.supervisor.plist"
+  "${fixture_root}/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
 fixture_manifest_entry artifacts.uninstallScript \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/uninstall-safeclam"
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue"
 fixture_manifest_entry requirements.helperSupervisor \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/helper/supervisor.requirement"
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement"
 fixture_manifest_entry requirements.control \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/supervisor/control.requirement"
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/control.requirement"
 fixture_manifest_entry requirements.activity \
-  "${fixture_root}/Library/Application Support/com.example.safeclam/supervisor/activity.requirement"
+  "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement"
 /usr/bin/plutil -insert buildID -string \
-  "$(fixture_hash "${fixture_root}/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor")" \
+  "$(fixture_hash "${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor")" \
   "${fixture_plist}"
 /usr/bin/plutil -convert json -r -o "${fixture_manifest}" "${fixture_plist}"
 
-SAFECLAM_INSTALL_ROOT="${fixture_root}" SAFECLAM_INSTALL_FIXTURE=YES \
+RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
   expect_exit 0 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
 print "설치 정합성 성공 fixture 통과"
-missing_requirement="${fixture_root}/Library/Application Support/com.example.safeclam/supervisor/activity.requirement"
+for icon_path in \
+  "${fixture_root}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png" \
+  "${fixture_root}/Applications/Runtinue.app/Contents/Resources/Runtinue.icns"; do
+  /bin/mv -- "${icon_path}" "${icon_path}.missing"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 66 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+  /bin/mv -- "${icon_path}.missing" "${icon_path}"
+  /usr/bin/ditto "${icon_path}" "${icon_path}.original"
+  print tamper >> "${icon_path}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 65 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+  /bin/mv -- "${icon_path}.original" "${icon_path}"
+done
+print "앱과 메뉴바 아이콘 누락 및 변조 차단 fixture 통과"
+missing_requirement="${fixture_root}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement"
 /bin/mv -- "${missing_requirement}" "${missing_requirement}.missing"
-SAFECLAM_INSTALL_ROOT="${fixture_root}" SAFECLAM_INSTALL_FIXTURE=YES \
+RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
   expect_exit 66 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
 /bin/mv -- "${missing_requirement}.missing" "${missing_requirement}"
 print "설치 파일 누락 실패 fixture 통과"
-print tamper >> "${fixture_root}/Applications/SafeClam.app/Contents/MacOS/safeclam-menubar"
-SAFECLAM_INSTALL_ROOT="${fixture_root}" SAFECLAM_INSTALL_FIXTURE=YES \
+print tamper >> "${fixture_root}/Applications/Runtinue.app/Contents/MacOS/runtinue-menubar"
+RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
   expect_exit 65 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
 print "앱 단독 변조 실패 fixture 통과"
 expect_exit 64 "${script_dir}/install-package.sh" "${fake_pkg}" --manifest "${fixture_manifest}"
@@ -157,31 +179,31 @@ print "설치와 rollback 예상 SHA 필수 gate 통과"
 
 mkdir -p "${project_root}/.release"
 occupied_root=$(/usr/bin/mktemp -d "${project_root}/.release/release-tool-occupied.XXXXXX")
-/usr/bin/touch "${occupied_root}/SafeClam-0.1.0-development.pkg"
+/usr/bin/touch "${occupied_root}/Runtinue-0.2.0-development.pkg"
 expect_exit 73 /usr/bin/env \
-  SAFECLAM_RELEASE_ROOT="${occupied_root}" \
-  SAFECLAM_DEVELOPMENT_PACKAGE=YES \
+  RUNTINUE_RELEASE_ROOT="${occupied_root}" \
+  RUNTINUE_DEVELOPMENT_PACKAGE=YES \
   DEVELOPER_ID_APPLICATION=- \
-  VERSION=0.1.0 \
+  VERSION=0.2.0 \
   "${script_dir}/package.sh"
 /bin/rm -rf -- "${occupied_root}"
 print "기존 패키지 보존 gate 통과"
 
-expect_exit 77 /usr/bin/env -u SAFECLAM_ALLOW_POWER_MUTATION \
+expect_exit 77 /usr/bin/env -u RUNTINUE_ALLOW_POWER_MUTATION \
   "${script_dir}/integration-test.sh"
 
 expect_exit 64 /usr/bin/env \
-  SAFECLAM_ALLOW_POWER_MUTATION=YES \
+  RUNTINUE_ALLOW_POWER_MUTATION=YES \
   "${script_dir}/integration-test.sh" --invalid-scenario
 
 expect_exit 64 /usr/bin/env \
-  -u SAFECLAM_EXPECTED_MANIFEST -u SAFECLAM_EXPECTED_PKG -u SAFECLAM_EXPECTED_SHA256 \
-  SAFECLAM_ALLOW_POWER_MUTATION=YES "${script_dir}/integration-test.sh"
+  -u RUNTINUE_EXPECTED_MANIFEST -u RUNTINUE_EXPECTED_PKG -u RUNTINUE_EXPECTED_SHA256 \
+  RUNTINUE_ALLOW_POWER_MUTATION=YES "${script_dir}/integration-test.sh"
 print "실제 전원 검증의 고정 artifact 필수 gate 통과"
 
 expect_exit 64 /usr/bin/env \
   VERSION="0.1/../../bad" \
-  SAFECLAM_DEVELOPMENT_PACKAGE=YES \
+  RUNTINUE_DEVELOPMENT_PACKAGE=YES \
   DEVELOPER_ID_APPLICATION=- \
   "${script_dir}/package.sh"
 
@@ -191,31 +213,31 @@ expect_exit 64 /usr/bin/env \
   "${script_dir}/build.sh"
 
 expect_exit 64 /usr/bin/env \
-  SAFECLAM_RELEASE_ROOT="${project_root}/../" \
+  RUNTINUE_RELEASE_ROOT="${project_root}/../" \
   DEVELOPER_ID_APPLICATION=- \
   "${script_dir}/build.sh"
 expect_exit 64 /usr/bin/env \
-  SAFECLAM_RELEASE_ROOT="${project_root}" \
+  RUNTINUE_RELEASE_ROOT="${project_root}" \
   DEVELOPER_ID_APPLICATION=- \
   "${script_dir}/build.sh"
 print "release root 경계와 rm 안전 gate 통과"
 
 expect_exit 64 /usr/bin/env \
-  VERSION=0.1.0 \
-  RELEASE_URL="http://example.com/SafeClam-0.1.0.pkg" \
-  HOMEPAGE_URL="https://example.com/safeclam" \
+  VERSION=0.2.0 \
+  RELEASE_URL="http://example.com/Runtinue-0.2.0.pkg" \
+  HOMEPAGE_URL="https://example.com/runtinue" \
   PKG_PATH="${fake_pkg}" \
   "${script_dir}/generate-cask.sh"
 
 expect_exit 64 /usr/bin/env \
-  VERSION=0.1.0 \
+  VERSION=0.2.0 \
   RELEASE_URL="https://example.com/wrong.pkg" \
-  HOMEPAGE_URL="https://example.com/safeclam" \
+  HOMEPAGE_URL="https://example.com/runtinue" \
   PKG_PATH="${fake_pkg}" \
   "${script_dir}/generate-cask.sh"
 
-candidate_pkg=${SAFECLAM_RELEASE_TEST_PKG:-}
-latest_pointer="${project_root}/.release/SafeClam-latest-development.json"
+candidate_pkg=${RUNTINUE_RELEASE_TEST_PKG:-}
+latest_pointer="${project_root}/.release/Runtinue-latest-development.json"
 if [[ -z "${candidate_pkg}" && -f "${latest_pointer}" ]]; then
   candidate_pkg=$(/usr/bin/plutil -extract packagePath raw "${latest_pointer}")
 fi
@@ -243,7 +265,7 @@ if [[ -f "${candidate_pkg}" && -f "${candidate_manifest}" ]]; then
     "${candidate_pkg}" "${forged_manifest}"
   print "unsigned 패키지를 공증된 release로 잘못 표기하는 manifest 거부 통과"
 else
-  print "실제 패키지 기반 설치와 manifest gate: not-run (SAFECLAM_RELEASE_TEST_PKG 필요)"
+  print "실제 패키지 기반 설치와 manifest gate: not-run (RUNTINUE_RELEASE_TEST_PKG 필요)"
 fi
 
 print "release 입력 gate 테스트 통과"

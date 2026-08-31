@@ -6,7 +6,8 @@ project_root=$(cd -- "$script_dir/.." && pwd)
 runtinue_test_dir=$(mktemp -d "${TMPDIR:-/tmp}/runtinue-public-test.XXXXXX")
 trap 'rm -rf -- "$runtinue_test_dir"' EXIT
 fixture="$runtinue_test_dir/fixture"
-mkdir -p "$fixture/scripts" "$fixture/.githooks" "$fixture/Sources"
+mkdir -p "$fixture/scripts" "$fixture/.githooks" \
+  "$fixture/Sources/RuntinueMenuBar/Resources" "$fixture/Packaging"
 cp "$project_root/.gitignore" "$fixture/.gitignore"
 cp "$script_dir/verify-public-tree.sh" "$fixture/scripts/verify-public-tree.sh"
 cp "$project_root/.githooks/pre-commit" "$fixture/.githooks/pre-commit"
@@ -14,12 +15,15 @@ cp "$project_root/.githooks/pre-push" "$fixture/.githooks/pre-push"
 chmod +x "$fixture/.githooks/pre-commit" "$fixture/.githooks/pre-push"
 printf '# Fixture\n' > "$fixture/README.md"
 printf '// Fixture\n' > "$fixture/Sources/Fixture.swift"
+cp "$project_root/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png" \
+  "$fixture/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png"
+cp "$project_root/Packaging/RuntinueIcon.png" "$fixture/Packaging/RuntinueIcon.png"
 git -C "$fixture" init --quiet -b main
 git -C "$fixture" config user.name 'Repository Boundary Test'
 git -C "$fixture" config user.email 'boundary-test@example.invalid'
 git -C "$fixture" config commit.gpgsign false
 git -C "$fixture" config core.hooksPath .githooks
-git -C "$fixture" add .gitignore README.md Sources scripts .githooks
+git -C "$fixture" add .gitignore README.md Sources scripts .githooks Packaging
 
 passed=0
 expect_success() {
@@ -57,6 +61,7 @@ for path in \
   'docs/notes.swift' 'notes.txt' 'report.pdf' 'report.docx' 'report.rst' \
   'events.jsonl' '.env' '.release/result.swift' 'Sources/notes.md' \
   'Sources/session.json' '.github/workflows/private.yml' 'image.png' \
+  'Packaging/notes.png' 'Sources/RuntinueMenuBar/Resources/private.png' \
   'secret.p12' 'file with spaces.md' $'file\nwith-newline.md'; do
   mkdir -p "$(dirname -- "$fixture/$path")"
   printf '비공개 테스트 자료\n' > "$fixture/$path"

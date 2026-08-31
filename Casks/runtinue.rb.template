@@ -1,0 +1,23 @@
+cask "runtinue" do
+  version "@@VERSION@@"
+  sha256 "@@SHA256@@"
+
+  url "@@URL@@"
+  name "Runtinue"
+  desc "Device-first bounded closed-lid protection for MacBook commute sessions"
+  homepage "@@HOMEPAGE@@"
+
+  depends_on macos: ">= :ventura"
+  depends_on arch: :arm64
+
+  pkg "Runtinue-#{version}.pkg"
+
+  uninstall script: {
+    executable: "/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue",
+    sudo:       true,
+  }
+
+  caveats <<~EOS
+    제거 스크립트는 정상 수면 상태를 확인하지 못하면 시스템 파일을 남기고 중단합니다.
+  EOS
+end

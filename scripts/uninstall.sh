@@ -28,15 +28,15 @@ run_as_console_user() {
 }
 
 console_uid=$(/usr/bin/stat -f %u /dev/console 2>/dev/null || print 0)
-cli=/usr/local/bin/safeclam
+cli=/usr/local/bin/runtinue
 if [[ "${console_uid}" -ge 500 && -x "${cli}" ]]; then
   run_as_console_user "${console_uid}" "${cli}" adaptive disable >/dev/null 2>&1 || true
   run_as_console_user "${console_uid}" "${cli}" desk disable >/dev/null 2>&1 || true
   run_as_console_user "${console_uid}" "${cli}" stop >/dev/null 2>&1 || true
 fi
 
-if [[ "$(sleep_state)" == "disabled" && ! -f "/Library/Application Support/com.example.safeclam/helper/lease.json" ]]; then
-  print -u2 "SafeClam 소유 lease 없이 SleepDisabled가 켜져 있어 제거하지 않습니다"
+if [[ "$(sleep_state)" == "disabled" && ! -f "/Library/Application Support/io.github.lastrites2018.runtinue/helper/lease.json" ]]; then
+  print -u2 "Runtinue 소유 lease 없이 SleepDisabled가 켜져 있어 제거하지 않습니다"
   exit 70
 fi
 
@@ -44,7 +44,7 @@ for _ in {1..100}; do
   state=$(sleep_state)
   [[ "${state}" == "normal" ]] && break
   [[ "${state}" == "unknown" ]] && break
-  /bin/launchctl kickstart -k system/com.example.safeclam.helper >/dev/null 2>&1 || true
+  /bin/launchctl kickstart -k system/io.github.lastrites2018.runtinue.helper >/dev/null 2>&1 || true
   /bin/sleep 1
 done
 
@@ -54,27 +54,27 @@ if [[ "$(sleep_state)" != "normal" ]]; then
 fi
 
 if [[ "${console_uid}" -ge 500 ]]; then
-  /bin/launchctl bootout "gui/${console_uid}" /Library/LaunchAgents/com.example.safeclam.supervisor.plist >/dev/null 2>&1 || true
+  /bin/launchctl bootout "gui/${console_uid}" /Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist >/dev/null 2>&1 || true
 fi
-/bin/launchctl bootout system /Library/LaunchDaemons/com.example.safeclam.helper.plist >/dev/null 2>&1 || true
+/bin/launchctl bootout system /Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist >/dev/null 2>&1 || true
 
 if [[ "$(sleep_state)" != "normal" ]]; then
-  /bin/launchctl bootstrap system /Library/LaunchDaemons/com.example.safeclam.helper.plist >/dev/null 2>&1 || true
+  /bin/launchctl bootstrap system /Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist >/dev/null 2>&1 || true
   print -u2 "서비스 종료 뒤 정상 수면 상태가 바뀌어 제거를 중단합니다"
   exit 70
 fi
 
 /bin/rm -f -- \
-  /usr/local/bin/safeclam \
-  /usr/local/bin/safeclam-hook \
-  /usr/local/bin/safeclam-activity \
-  /Library/LaunchAgents/com.example.safeclam.supervisor.plist \
-  /Library/LaunchDaemons/com.example.safeclam.helper.plist
+  /usr/local/bin/runtinue \
+  /usr/local/bin/runtinue-hook \
+  /usr/local/bin/runtinue-activity \
+  /Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist \
+  /Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist
 /bin/rm -rf -- \
-  /Applications/SafeClam.app \
-  "/Library/Application Support/com.example.safeclam" \
-  /Library/Logs/com.example.safeclam
-/usr/sbin/pkgutil --forget com.example.safeclam.pkg >/dev/null 2>&1 || true
+  /Applications/Runtinue.app \
+  "/Library/Application Support/io.github.lastrites2018.runtinue" \
+  /Library/Logs/io.github.lastrites2018.runtinue
+/usr/sbin/pkgutil --forget io.github.lastrites2018.runtinue.pkg >/dev/null 2>&1 || true
 
-print "SafeClam 시스템 구성요소를 제거했습니다"
+print "Runtinue 시스템 구성요소를 제거했습니다"
 print "사용자 config, session, history 파일은 보존했습니다"

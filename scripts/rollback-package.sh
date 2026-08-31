@@ -10,7 +10,7 @@ apply=NO
 allow_power_mutation=NO
 
 usage() {
-  print -u2 "사용법: rollback-package.sh <SafeClam.pkg> --sha256 <64자리 SHA-256> --manifest <manifest.json> [--apply --allow-power-mutation]"
+  print -u2 "사용법: rollback-package.sh <Runtinue.pkg> --sha256 <64자리 SHA-256> --manifest <manifest.json> [--apply --allow-power-mutation]"
   exit 64
 }
 

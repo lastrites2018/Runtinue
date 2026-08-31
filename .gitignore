@@ -6,11 +6,13 @@
 !/LICENSE
 !/Package.swift
 !/Sources/**/*.swift
+!/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png
+!/Packaging/RuntinueIcon.png
 !/Tests/**/*.swift
 !/scripts/*.sh
 !/Resources/*.plist
 !/Resources/*.requirement.example
-!/Packaging/SafeClam.app.Info.plist
+!/Packaging/Runtinue.app.Info.plist
 !/Packaging/pkg-scripts/preinstall
 !/Packaging/pkg-scripts/postinstall
 !/Casks/*.rb.template

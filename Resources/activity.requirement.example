@@ -1,1 +1,1 @@
-anchor apple generic and certificate leaf[subject.OU] = "TEAMID1234" and (identifier "com.example.safeclam.hook" or identifier "com.example.safeclam.activity")
+anchor apple generic and certificate leaf[subject.OU] = "TEAMID1234" and (identifier "io.github.lastrites2018.runtinue.hook" or identifier "io.github.lastrites2018.runtinue.activity")

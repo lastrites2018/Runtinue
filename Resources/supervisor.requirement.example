@@ -1,1 +1,1 @@
-anchor apple generic and identifier "com.example.safeclam.supervisor" and certificate leaf[subject.OU] = "TEAMID"
+anchor apple generic and identifier "io.github.lastrites2018.runtinue.supervisor" and certificate leaf[subject.OU] = "TEAMID"

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.github.lastrites2018.runtinue.helper</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper</string>
+  </array>
+  <key>UserName</key>
+  <string>root</string>
+  <key>MachServices</key>
+  <dict>
+    <key>io.github.lastrites2018.runtinue.helper</key>
+    <true/>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>ExitTimeOut</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/io.github.lastrites2018.runtinue/helper.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/io.github.lastrites2018.runtinue/helper.log</string>
+</dict>
+</plist>

@@ -3,56 +3,56 @@
 import PackageDescription
 
 let package = Package(
-  name: "SafeClamshellKit",
+  name: "Runtinue",
   platforms: [
     .macOS(.v13)
   ],
   products: [
-    .library(name: "SafeClamCore", targets: ["SafeClamCore"]),
-    .library(name: "SafeClamIPC", targets: ["SafeClamIPC"]),
-    .library(name: "SafeClamHelperCore", targets: ["SafeClamHelperCore"]),
-    .library(name: "SafeClamHelperSystem", targets: ["SafeClamHelperSystem"]),
-    .library(name: "SafeClamSupervisorCore", targets: ["SafeClamSupervisorCore"]),
-    .library(name: "SafeClamSupervisorSystem", targets: ["SafeClamSupervisorSystem"]),
-    .library(name: "SafeClamSystem", targets: ["SafeClamSystem"]),
-    .library(name: "SafeClamKit", targets: ["SafeClamKit"]),
-    .library(name: "SafeClamUserSupport", targets: ["SafeClamUserSupport"]),
-    .library(name: "SafeClamActivity", targets: ["SafeClamActivity"]),
-    .executable(name: "safeclam", targets: ["SafeClamCLI"]),
-    .executable(name: "safeclam-helper", targets: ["SafeClamHelperDaemon"]),
-    .executable(name: "safeclam-supervisor", targets: ["SafeClamSupervisorDaemon"]),
-    .executable(name: "safeclam-hook", targets: ["SafeClamActivityHook"]),
-    .executable(name: "safeclam-activity", targets: ["SafeClamActivityAdapter"]),
-    .executable(name: "safeclam-menubar", targets: ["SafeClamMenuBar"]),
+    .library(name: "RuntinueCore", targets: ["RuntinueCore"]),
+    .library(name: "RuntinueIPC", targets: ["RuntinueIPC"]),
+    .library(name: "RuntinueHelperCore", targets: ["RuntinueHelperCore"]),
+    .library(name: "RuntinueHelperSystem", targets: ["RuntinueHelperSystem"]),
+    .library(name: "RuntinueSupervisorCore", targets: ["RuntinueSupervisorCore"]),
+    .library(name: "RuntinueSupervisorSystem", targets: ["RuntinueSupervisorSystem"]),
+    .library(name: "RuntinueSystem", targets: ["RuntinueSystem"]),
+    .library(name: "RuntinueKit", targets: ["RuntinueKit"]),
+    .library(name: "RuntinueUserSupport", targets: ["RuntinueUserSupport"]),
+    .library(name: "RuntinueActivity", targets: ["RuntinueActivity"]),
+    .executable(name: "runtinue", targets: ["RuntinueCLI"]),
+    .executable(name: "runtinue-helper", targets: ["RuntinueHelperDaemon"]),
+    .executable(name: "runtinue-supervisor", targets: ["RuntinueSupervisorDaemon"]),
+    .executable(name: "runtinue-hook", targets: ["RuntinueActivityHook"]),
+    .executable(name: "runtinue-activity", targets: ["RuntinueActivityAdapter"]),
+    .executable(name: "runtinue-menubar", targets: ["RuntinueMenuBar"]),
   ],
   targets: [
-    .target(name: "SafeClamCore"),
-    .target(name: "SafeClamIPC"),
+    .target(name: "RuntinueCore"),
+    .target(name: "RuntinueIPC"),
     .target(
-      name: "SafeClamHelperCore",
-      dependencies: ["SafeClamCore"]
+      name: "RuntinueHelperCore",
+      dependencies: ["RuntinueCore"]
     ),
     .target(
-      name: "SafeClamHelperSystem",
-      dependencies: ["SafeClamCore", "SafeClamHelperCore"],
+      name: "RuntinueHelperSystem",
+      dependencies: ["RuntinueCore", "RuntinueHelperCore"],
       linkerSettings: [
         .linkedFramework("IOKit")
       ]
     ),
     .target(
-      name: "SafeClamSupervisorCore",
-      dependencies: ["SafeClamCore"]
+      name: "RuntinueSupervisorCore",
+      dependencies: ["RuntinueCore"]
     ),
     .target(
-      name: "SafeClamSupervisorSystem",
+      name: "RuntinueSupervisorSystem",
       dependencies: [
-        "SafeClamCore", "SafeClamIPC", "SafeClamSupervisorCore", "SafeClamSystem",
-        "SafeClamUserSupport",
+        "RuntinueCore", "RuntinueIPC", "RuntinueSupervisorCore", "RuntinueSystem",
+        "RuntinueUserSupport",
       ]
     ),
     .target(
-      name: "SafeClamSystem",
-      dependencies: ["SafeClamCore"],
+      name: "RuntinueSystem",
+      dependencies: ["RuntinueCore"],
       linkerSettings: [
         .linkedFramework("CoreGraphics"),
         .linkedFramework("CoreWLAN"),
@@ -61,95 +61,96 @@ let package = Package(
       ]
     ),
     .target(
-      name: "SafeClamKit",
-      dependencies: ["SafeClamCore", "SafeClamIPC"]
+      name: "RuntinueKit",
+      dependencies: ["RuntinueCore", "RuntinueIPC"]
     ),
     .target(
-      name: "SafeClamUserSupport",
-      dependencies: ["SafeClamIPC"]
+      name: "RuntinueUserSupport",
+      dependencies: ["RuntinueIPC"]
     ),
-    .target(name: "SafeClamActivity"),
+    .target(name: "RuntinueActivity"),
     .executableTarget(
-      name: "SafeClamCLI",
+      name: "RuntinueCLI",
       dependencies: [
-        "SafeClamCore", "SafeClamIPC", "SafeClamSystem", "SafeClamUserSupport",
+        "RuntinueCore", "RuntinueIPC", "RuntinueSystem", "RuntinueUserSupport",
       ]
     ),
     .executableTarget(
-      name: "SafeClamHelperDaemon",
-      dependencies: ["SafeClamCore", "SafeClamHelperCore", "SafeClamHelperSystem", "SafeClamIPC"],
+      name: "RuntinueHelperDaemon",
+      dependencies: ["RuntinueCore", "RuntinueHelperCore", "RuntinueHelperSystem", "RuntinueIPC"],
       linkerSettings: [
         .linkedFramework("Security")
       ]
     ),
     .executableTarget(
-      name: "SafeClamSupervisorDaemon",
+      name: "RuntinueSupervisorDaemon",
       dependencies: [
-        "SafeClamCore", "SafeClamIPC", "SafeClamSupervisorCore", "SafeClamSupervisorSystem",
-        "SafeClamSystem", "SafeClamUserSupport",
+        "RuntinueCore", "RuntinueIPC", "RuntinueSupervisorCore", "RuntinueSupervisorSystem",
+        "RuntinueSystem", "RuntinueUserSupport",
       ],
       linkerSettings: [
         .linkedFramework("Security")
       ]
     ),
     .executableTarget(
-      name: "SafeClamActivityHook",
-      dependencies: ["SafeClamIPC"]
+      name: "RuntinueActivityHook",
+      dependencies: ["RuntinueIPC"]
     ),
     .executableTarget(
-      name: "SafeClamActivityAdapter",
-      dependencies: ["SafeClamActivity", "SafeClamIPC"]
+      name: "RuntinueActivityAdapter",
+      dependencies: ["RuntinueActivity", "RuntinueIPC"]
     ),
     .executableTarget(
-      name: "SafeClamMenuBar",
-      dependencies: ["SafeClamIPC", "SafeClamSystem", "SafeClamUserSupport"],
+      name: "RuntinueMenuBar",
+      dependencies: ["RuntinueIPC", "RuntinueSystem", "RuntinueUserSupport"],
+      resources: [.copy("Resources/RuntinueTemplate.png")],
       linkerSettings: [
         .linkedFramework("AppKit"),
         .linkedFramework("CoreLocation"),
       ]
     ),
     .testTarget(
-      name: "SafeClamCoreTests",
-      dependencies: ["SafeClamCore"]
+      name: "RuntinueCoreTests",
+      dependencies: ["RuntinueCore"]
     ),
     .testTarget(
-      name: "SafeClamHelperCoreTests",
-      dependencies: ["SafeClamCore", "SafeClamHelperCore", "SafeClamHelperSystem"]
+      name: "RuntinueHelperCoreTests",
+      dependencies: ["RuntinueCore", "RuntinueHelperCore", "RuntinueHelperSystem"]
     ),
     .testTarget(
-      name: "SafeClamIPCTests",
-      dependencies: ["SafeClamIPC"]
+      name: "RuntinueIPCTests",
+      dependencies: ["RuntinueIPC"]
     ),
     .testTarget(
-      name: "SafeClamSupervisorCoreTests",
-      dependencies: ["SafeClamCore", "SafeClamSupervisorCore"]
+      name: "RuntinueSupervisorCoreTests",
+      dependencies: ["RuntinueCore", "RuntinueSupervisorCore"]
     ),
     .testTarget(
-      name: "SafeClamSupervisorSystemTests",
+      name: "RuntinueSupervisorSystemTests",
       dependencies: [
-        "SafeClamCore", "SafeClamHelperCore", "SafeClamIPC", "SafeClamSupervisorCore",
-        "SafeClamSupervisorSystem", "SafeClamUserSupport",
+        "RuntinueCore", "RuntinueHelperCore", "RuntinueIPC", "RuntinueSupervisorCore",
+        "RuntinueSupervisorSystem", "RuntinueUserSupport",
       ]
     ),
     .testTarget(
-      name: "SafeClamKitTests",
-      dependencies: ["SafeClamIPC", "SafeClamKit"]
+      name: "RuntinueKitTests",
+      dependencies: ["RuntinueIPC", "RuntinueKit"]
     ),
     .testTarget(
-      name: "SafeClamUserSupportTests",
-      dependencies: ["SafeClamIPC", "SafeClamUserSupport"]
+      name: "RuntinueUserSupportTests",
+      dependencies: ["RuntinueIPC", "RuntinueUserSupport"]
     ),
     .testTarget(
-      name: "SafeClamActivityTests",
-      dependencies: ["SafeClamActivity"]
+      name: "RuntinueActivityTests",
+      dependencies: ["RuntinueActivity"]
     ),
     .testTarget(
-      name: "SafeClamSystemTests",
-      dependencies: ["SafeClamSystem"]
+      name: "RuntinueSystemTests",
+      dependencies: ["RuntinueSystem"]
     ),
     .testTarget(
-      name: "SafeClamMenuBarTests",
-      dependencies: ["SafeClamIPC", "SafeClamMenuBar"]
+      name: "RuntinueMenuBarTests",
+      dependencies: ["RuntinueIPC", "RuntinueMenuBar"]
     ),
   ]
 )
