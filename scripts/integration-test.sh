@@ -1,8 +1,8 @@
 #!/bin/zsh
 set -euo pipefail
 
-if [[ "${SAFECLAM_ALLOW_POWER_MUTATION:-NO}" != "YES" ]]; then
-  print -u2 "실제 전원 변경 테스트입니다. SAFECLAM_ALLOW_POWER_MUTATION=YES를 명시해야 합니다"
+if [[ "${RUNTINUE_ALLOW_POWER_MUTATION:-NO}" != "YES" ]]; then
+  print -u2 "실제 전원 변경 테스트입니다. RUNTINUE_ALLOW_POWER_MUTATION=YES를 명시해야 합니다"
   exit 77
 fi
 
@@ -14,11 +14,11 @@ if [[ "$#" -gt 1 || \
 fi
 scenario=${1:-normal}
 script_dir=${0:A:h}
-manifest=${SAFECLAM_EXPECTED_MANIFEST:-}
-pkg=${SAFECLAM_EXPECTED_PKG:-}
-expected_sha=${SAFECLAM_EXPECTED_SHA256:-}
+manifest=${RUNTINUE_EXPECTED_MANIFEST:-}
+pkg=${RUNTINUE_EXPECTED_PKG:-}
+expected_sha=${RUNTINUE_EXPECTED_SHA256:-}
 [[ -f "${manifest}" && -f "${pkg}" && "${expected_sha}" =~ '^[0-9a-fA-F]{64}$' ]] || {
-  print -u2 "고정 검증 대상이 필요합니다: SAFECLAM_EXPECTED_MANIFEST, SAFECLAM_EXPECTED_PKG, SAFECLAM_EXPECTED_SHA256"
+  print -u2 "고정 검증 대상이 필요합니다: RUNTINUE_EXPECTED_MANIFEST, RUNTINUE_EXPECTED_PKG, RUNTINUE_EXPECTED_SHA256"
   exit 64
 }
 actual_sha=$(/usr/bin/shasum -a 256 -- "${pkg}" | /usr/bin/awk '{print $1}')
@@ -27,13 +27,13 @@ actual_sha=$(/usr/bin/shasum -a 256 -- "${pkg}" | /usr/bin/awk '{print $1}')
   exit 65
 }
 
-cli=${SAFECLAM_CLI:-/usr/local/bin/safeclam}
-[[ "${cli}" == /usr/local/bin/safeclam ]] || {
+cli=${RUNTINUE_CLI:-/usr/local/bin/runtinue}
+[[ "${cli}" == /usr/local/bin/runtinue ]] || {
   print -u2 "통합 검증은 manifest로 확인한 설치 CLI만 사용합니다"
   exit 64
 }
 test -x "${cli}" || {
-  print -u2 "설치된 safeclam CLI를 찾을 수 없음: ${cli}"
+  print -u2 "설치된 runtinue CLI를 찾을 수 없음: ${cli}"
   exit 66
 }
 console_uid=$(/usr/bin/stat -f %u /dev/console)
@@ -86,7 +86,7 @@ cleanup() {
 
 print "통합 검증 대상 SHA-256: ${actual_sha}"
 print "시나리오: ${scenario}, 시작: $(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
-/bin/launchctl print system/com.example.safeclam.helper >/dev/null
+/bin/launchctl print system/io.github.lastrites2018.runtinue.helper >/dev/null
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -102,18 +102,18 @@ done
 "${cli}" verify-helper-boundary
 
 if [[ "${scenario}" == "--supervisor-crash" ]]; then
-  /bin/launchctl kill SIGKILL "gui/${UID}/com.example.safeclam.supervisor"
+  /bin/launchctl kill SIGKILL "gui/${UID}/io.github.lastrites2018.runtinue.supervisor"
   for _ in {1..100}; do
     [[ "$(sleep_state)" == "normal" ]] && break
     /bin/sleep 1
   done
 elif [[ "${scenario}" == "--helper-crash" ]]; then
-  /usr/bin/sudo -n /bin/launchctl kill SIGKILL system/com.example.safeclam.helper
+  /usr/bin/sudo -n /bin/launchctl kill SIGKILL system/io.github.lastrites2018.runtinue.helper
   for _ in {1..100}; do
     [[ "$(sleep_state)" == "normal" ]] && break
     /bin/sleep 1
   done
-  /bin/launchctl print system/com.example.safeclam.helper >/dev/null
+  /bin/launchctl print system/io.github.lastrites2018.runtinue.helper >/dev/null
 else
   "${cli}" desk disable
 fi

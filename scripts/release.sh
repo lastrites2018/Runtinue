@@ -3,11 +3,11 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 project_root=${script_dir:h}
-release_root=${SAFECLAM_RELEASE_ROOT:-"${project_root}/.release"}
+release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 release_root=${release_root:A}
-version=${VERSION:-0.1.0}
+version=${VERSION:-0.2.0}
 notary_profile=${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE을 지정해야 합니다}
-pkg="${release_root}/SafeClam-${version}.pkg"
+pkg="${release_root}/Runtinue-${version}.pkg"
 
 VERSION="${version}" "${script_dir}/package.sh"
 /usr/bin/xcrun notarytool submit "${pkg}" --keychain-profile "${notary_profile}" --wait
@@ -17,11 +17,11 @@ VERSION="${version}" "${script_dir}/package.sh"
 "${script_dir}/verify-release.sh" "${pkg}"
 
 manifest="${pkg}.manifest.json"
-SAFECLAM_NOTARIZATION_VERIFIED=YES \
+RUNTINUE_NOTARIZATION_VERIFIED=YES \
   "${script_dir}/release-manifest.sh" create "${pkg}" "${manifest}" release
-SAFECLAM_NOTARIZATION_VERIFIED=YES \
+RUNTINUE_NOTARIZATION_VERIFIED=YES \
   "${script_dir}/release-manifest.sh" publish \
-    "${pkg}" "${manifest}" "${project_root}/.release/SafeClam-latest.json"
+    "${pkg}" "${manifest}" "${project_root}/.release/Runtinue-latest.json"
 
 checksum_file="${pkg}.sha256"
 checksum=$(/usr/bin/shasum -a 256 -- "${pkg}" | /usr/bin/awk '{print $1}')

@@ -3,7 +3,7 @@ set -euo pipefail
 
 target_volume=${3:-/}
 if [[ "${target_volume}" != "/" ]]; then
-  print -u2 "SafeClam은 현재 부팅 볼륨에만 설치할 수 있습니다"
+  print -u2 "Runtinue은 현재 부팅 볼륨에만 설치할 수 있습니다"
   exit 64
 fi
 
@@ -29,7 +29,38 @@ run_as_console_user() {
 }
 
 console_uid=$(/usr/bin/stat -f %u /dev/console 2>/dev/null || print 0)
-installed_cli=/usr/local/bin/safeclam
+
+# 두 이름의 Helper가 전원 설정을 함께 소유하지 않도록 이전 설치를 먼저 제거한다.
+# 사용자별 기록과 설정은 검사 대상에서 제외하며 그대로 보존한다.
+legacy_paths=(
+  /Applications/SafeClam.app
+  /usr/local/bin/safeclam
+  /usr/local/bin/safeclam-hook
+  /usr/local/bin/safeclam-activity
+  "/Library/Application Support/com.example.safeclam"
+  /Library/LaunchDaemons/com.example.safeclam.helper.plist
+  /Library/LaunchAgents/com.example.safeclam.supervisor.plist
+)
+reject_legacy_installation() {
+  print -u2 "이전 SafeClam 설치가 남아 있어 Runtinue 설치를 중단합니다."
+  print -u2 "기존 앱에서 모든 보호 모드를 중단하고 메뉴바를 종료한 뒤 다음 명령으로 제거하세요:"
+  print -u2 "sudo '/Library/Application Support/com.example.safeclam/uninstall-safeclam'"
+  print -u2 "제거가 실패하면 복구 책임을 보존해야 하므로 파일을 직접 삭제하지 마세요."
+  exit 78
+}
+for legacy_path in "${legacy_paths[@]}"; do
+  [[ ! -e "${legacy_path}" && ! -L "${legacy_path}" ]] || reject_legacy_installation
+done
+if /bin/launchctl print system/com.example.safeclam.helper >/dev/null 2>&1; then
+  reject_legacy_installation
+fi
+if [[ "${console_uid}" -ge 500 ]] && \
+  /bin/launchctl print "gui/${console_uid}/com.example.safeclam.supervisor" >/dev/null 2>&1
+then
+  reject_legacy_installation
+fi
+
+installed_cli=/usr/local/bin/runtinue
 if [[ "${console_uid}" -ge 500 && -x "${installed_cli}" ]]; then
   run_as_console_user "${console_uid}" "${installed_cli}" adaptive disable >/dev/null 2>&1 || true
   run_as_console_user "${console_uid}" "${installed_cli}" desk disable >/dev/null 2>&1 || true
@@ -37,7 +68,7 @@ if [[ "${console_uid}" -ge 500 && -x "${installed_cli}" ]]; then
 fi
 
 state=$(sleep_state)
-if [[ "${state}" == "disabled" && ! -f "/Library/Application Support/com.example.safeclam/helper/lease.json" ]]; then
+if [[ "${state}" == "disabled" && ! -f "/Library/Application Support/io.github.lastrites2018.runtinue/helper/lease.json" ]]; then
   print -u2 "다른 소유자의 SleepDisabled가 켜져 있어 설치를 중단합니다"
   exit 70
 fi
@@ -46,7 +77,7 @@ for _ in {1..30}; do
   state=$(sleep_state)
   [[ "${state}" == "normal" ]] && exit 0
   [[ "${state}" == "unknown" ]] && break
-  /bin/launchctl kickstart system/com.example.safeclam.helper >/dev/null 2>&1 || true
+  /bin/launchctl kickstart system/io.github.lastrites2018.runtinue.helper >/dev/null 2>&1 || true
   /bin/sleep 1
 done
 

@@ -5,11 +5,11 @@ script_dir=${0:A:h}
 project_root=${script_dir:h}
 pkg=${1:-}
 test -n "${pkg}" && test -f "${pkg}" || {
-  print -u2 "사용법: verify-package-payload.sh <SafeClam.pkg>"
+  print -u2 "사용법: verify-package-payload.sh <Runtinue.pkg>"
   exit 64
 }
 
-work_root=$(/usr/bin/mktemp -d /tmp/safeclam-package-payload.XXXXXX)
+work_root=$(/usr/bin/mktemp -d /tmp/runtinue-package-payload.XXXXXX)
 cleanup() {
   /bin/rm -rf -- "${work_root}"
 }
@@ -24,14 +24,16 @@ payload=${payload_candidates[1]}
 package_scripts=${payload:h}/Scripts
 
 required_paths=(
-  "${payload}/usr/local/bin/safeclam"
-  "${payload}/usr/local/bin/safeclam-hook"
-  "${payload}/usr/local/bin/safeclam-activity"
-  "${payload}/Library/Application Support/com.example.safeclam/bin/safeclam-helper"
-  "${payload}/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor"
-  "${payload}/Applications/SafeClam.app"
-  "${payload}/Library/LaunchDaemons/com.example.safeclam.helper.plist"
-  "${payload}/Library/LaunchAgents/com.example.safeclam.supervisor.plist"
+  "${payload}/usr/local/bin/runtinue"
+  "${payload}/usr/local/bin/runtinue-hook"
+  "${payload}/usr/local/bin/runtinue-activity"
+  "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper"
+  "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
+  "${payload}/Applications/Runtinue.app"
+  "${payload}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
+  "${payload}/Applications/Runtinue.app/Contents/Resources/Runtinue.icns"
+  "${payload}/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist"
+  "${payload}/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
 )
 for path in "${required_paths[@]}"; do
   test -e "${path}" || {
@@ -40,7 +42,7 @@ for path in "${required_paths[@]}"; do
   }
 done
 
-app_info="${payload}/Applications/SafeClam.app/Contents/Info.plist"
+app_info="${payload}/Applications/Runtinue.app/Contents/Info.plist"
 location_usage=$(
   /usr/bin/plutil -extract NSLocationUsageDescription raw "${app_info}"
 )
@@ -51,7 +53,7 @@ test -n "${location_usage}" || {
 app_identifier=$(
   /usr/bin/plutil -extract CFBundleIdentifier raw "${app_info}"
 )
-[[ "${app_identifier}" == "com.example.safeclam.app" ]] || {
+[[ "${app_identifier}" == "io.github.lastrites2018.runtinue.app" ]] || {
   print -u2 "패키지 앱 identifier가 예상과 다름"
   exit 66
 }
@@ -71,27 +73,30 @@ expect_plist_value() {
   }
 }
 
-helper_plist="${payload}/Library/LaunchDaemons/com.example.safeclam.helper.plist"
-supervisor_plist="${payload}/Library/LaunchAgents/com.example.safeclam.supervisor.plist"
-expect_plist_value "${helper_plist}" ":Label" "com.example.safeclam.helper"
+helper_plist="${payload}/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist"
+supervisor_plist="${payload}/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
+expect_plist_value "${helper_plist}" ":Label" "io.github.lastrites2018.runtinue.helper"
 expect_plist_value "${helper_plist}" ":ProgramArguments:0" \
-  "/Library/Application Support/com.example.safeclam/bin/safeclam-helper"
+  "/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper"
 expect_plist_value "${helper_plist}" ":UserName" "root"
-expect_plist_value "${helper_plist}" ":MachServices:com.example.safeclam.helper" "true"
+expect_plist_value "${helper_plist}" ":MachServices:io.github.lastrites2018.runtinue.helper" "true"
 expect_plist_value "${helper_plist}" ":RunAtLoad" "true"
 expect_plist_value "${helper_plist}" ":KeepAlive" "true"
 
-expect_plist_value "${supervisor_plist}" ":Label" "com.example.safeclam.supervisor"
+expect_plist_value "${supervisor_plist}" ":Label" "io.github.lastrites2018.runtinue.supervisor"
 expect_plist_value "${supervisor_plist}" ":ProgramArguments:0" \
-  "/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor"
-expect_plist_value "${supervisor_plist}" ":MachServices:com.example.safeclam.supervisor" "true"
+  "/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
+expect_plist_value "${supervisor_plist}" ":MachServices:io.github.lastrites2018.runtinue.supervisor" "true"
 expect_plist_value "${supervisor_plist}" \
-  ":MachServices:com.example.safeclam.supervisor.activity" "true"
+  ":MachServices:io.github.lastrites2018.runtinue.supervisor.activity" "true"
 expect_plist_value "${supervisor_plist}" ":RunAtLoad" "true"
 expect_plist_value "${supervisor_plist}" ":KeepAlive" "true"
 expect_plist_value "${supervisor_plist}" ":LimitLoadToSessionType" "Aqua"
 
-expect_plist_value "${app_info}" ":CFBundleExecutable" "safeclam-menubar"
+expect_plist_value "${app_info}" ":CFBundleExecutable" "runtinue-menubar"
+expect_plist_value "${app_info}" ":CFBundleName" "Runtinue"
+expect_plist_value "${app_info}" ":CFBundleDisplayName" "Runtinue"
+expect_plist_value "${app_info}" ":CFBundleIconFile" "Runtinue"
 expect_plist_value "${app_info}" ":LSMinimumSystemVersion" "13.0"
 expect_plist_value "${app_info}" ":LSUIElement" "true"
 location_when_in_use=$(
@@ -104,30 +109,30 @@ test -n "${location_when_in_use}" || {
 
 helper_requirement=$(
   /usr/bin/sed -n '1p' \
-    "${payload}/Library/Application Support/com.example.safeclam/helper/supervisor.requirement"
+    "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement"
 )
 control_requirement=$(
   /usr/bin/sed -n '1p' \
-    "${payload}/Library/Application Support/com.example.safeclam/supervisor/control.requirement"
+    "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/control.requirement"
 )
 activity_requirement=$(
   /usr/bin/sed -n '1p' \
-    "${payload}/Library/Application Support/com.example.safeclam/supervisor/activity.requirement"
+    "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement"
 )
 
 /usr/bin/csreq -r="${helper_requirement}" -t >/dev/null
 /usr/bin/csreq -r="${control_requirement}" -t >/dev/null
 /usr/bin/csreq -r="${activity_requirement}" -t >/dev/null
 /usr/bin/codesign --verify --strict -R="${helper_requirement}" \
-  "${payload}/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor"
+  "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
 /usr/bin/codesign --verify --strict -R="${control_requirement}" \
-  "${payload}/usr/local/bin/safeclam"
+  "${payload}/usr/local/bin/runtinue"
 /usr/bin/codesign --verify --strict -R="${control_requirement}" \
-  "${payload}/Applications/SafeClam.app"
+  "${payload}/Applications/Runtinue.app"
 /usr/bin/codesign --verify --strict -R="${activity_requirement}" \
-  "${payload}/usr/local/bin/safeclam-hook"
+  "${payload}/usr/local/bin/runtinue-hook"
 /usr/bin/codesign --verify --strict -R="${activity_requirement}" \
-  "${payload}/usr/local/bin/safeclam-activity"
+  "${payload}/usr/local/bin/runtinue-activity"
 
 rejects_requirement() {
   local requirement=$1
@@ -139,17 +144,22 @@ rejects_requirement() {
     exit 66
   fi
 }
-rejects_requirement "${helper_requirement}" "${payload}/usr/local/bin/safeclam"
-rejects_requirement "${control_requirement}" "${payload}/usr/local/bin/safeclam-hook"
-rejects_requirement "${activity_requirement}" "${payload}/usr/local/bin/safeclam"
+rejects_requirement "${helper_requirement}" "${payload}/usr/local/bin/runtinue"
+rejects_requirement "${control_requirement}" "${payload}/usr/local/bin/runtinue-hook"
+rejects_requirement "${activity_requirement}" "${payload}/usr/local/bin/runtinue"
 
 /usr/bin/plutil -lint \
-  "${payload}/Library/LaunchDaemons/com.example.safeclam.helper.plist" \
-  "${payload}/Library/LaunchAgents/com.example.safeclam.supervisor.plist" >/dev/null
+  "${payload}/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist" \
+  "${payload}/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist" >/dev/null
 for script in "${package_scripts}/preinstall" "${package_scripts}/postinstall"; do
   /bin/zsh -n "${script}"
 done
-if [[ "${SAFECLAM_SKIP_SOURCE_COMPARISON:-NO}" != "YES" ]]; then
+if [[ "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != "YES" ]]; then
+  /usr/bin/cmp -s "${payload}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png" \
+    "${project_root}/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png" || {
+    print -u2 "패키지 메뉴바 아이콘이 검증된 소스와 다름"
+    exit 66
+  }
   /usr/bin/cmp -s "${package_scripts}/preinstall" \
     "${project_root}/Packaging/pkg-scripts/preinstall" || {
     print -u2 "패키지 preinstall이 검증된 소스와 다름"
@@ -161,7 +171,7 @@ if [[ "${SAFECLAM_SKIP_SOURCE_COMPARISON:-NO}" != "YES" ]]; then
     exit 66
   }
   /usr/bin/cmp -s \
-    "${payload}/Library/Application Support/com.example.safeclam/uninstall-safeclam" \
+    "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue" \
     "${project_root}/scripts/uninstall.sh" || {
     print -u2 "패키지 uninstall이 검증된 소스와 다름"
     exit 66

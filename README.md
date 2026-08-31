@@ -33,9 +33,9 @@ Runtinue는 개발자 본인이 출퇴근할 때 사용하려고 만든 개인�
 
 핫스팟 연결은 휴대전화와 macOS에서 설정합니다. 현재 앱은 네트워크 전환을 관측하며, Wi-Fi 접속을 직접 수행하지 않습니다. 전환 확인이 끝나기 전에 덮개를 닫으면 작업이 중단될 수 있습니다.
 
-안전 중단은 정상 수면을 허용하는 설정으로 복구하는 과정입니다. 즉시 잠자기에 들어가는지, 에이전트가 종료되는지와 작업이 저장되는지는 별도로 확인해야 합니다. 메뉴바 앱을 종료하는 것만으로 활성 작업 유지가 중단되지는 않습니다. 종료 전에 메뉴의 중단 기능이나 `safeclam stop`을 사용하세요.
+안전 중단은 정상 수면을 허용하는 설정으로 복구하는 과정입니다. 즉시 잠자기에 들어가는지, 에이전트가 종료되는지와 작업이 저장되는지는 별도로 확인해야 합니다. 메뉴바 앱을 종료하는 것만으로 활성 작업 유지가 중단되지는 않습니다. 종료 전에 메뉴의 중단 기능이나 `runtinue stop`을 사용하세요.
 
-현재 앱 파일과 CLI는 각각 `SafeClam.app`과 `safeclam`이라는 실행 이름을 사용합니다. 아래 명령은 이 실행 이름을 기준으로 합니다.
+앱은 `Runtinue.app`, CLI는 `runtinue`로 실행합니다. 메뉴바에는 달리는 사람의 팔이 화살표로 이어지는 아이콘이 표시됩니다. 아이콘 옆의 `✓`는 보호 중, `…`는 대기나 처리 중, `!`는 안전 경고, `?`는 상태 확인 불가를 뜻합니다. 덮개를 닫아도 되는지는 메뉴의 상태 문구로 확인하세요.
 
 ## 시작 전 확인
 
@@ -59,8 +59,8 @@ cd Runtinue
 소스에서 읽기 전용 진단을 실행할 수 있습니다.
 
 ```sh
-swift run --disable-sandbox safeclam inspect
-swift run --disable-sandbox safeclam diagnose
+swift run --disable-sandbox runtinue inspect
+swift run --disable-sandbox runtinue diagnose
 ```
 
 ### 개인용 개발 패키지
@@ -70,13 +70,13 @@ swift run --disable-sandbox safeclam diagnose
 ```sh
 mkdir -p .release
 runtinue_package_dir=$(mktemp -d "$PWD/.release/development.XXXXXX")
-SAFECLAM_RELEASE_ROOT="$runtinue_package_dir" VERSION=0.1.0 ./scripts/package-development.sh
+RUNTINUE_RELEASE_ROOT="$runtinue_package_dir" VERSION=0.2.0 ./scripts/package-development.sh
 ```
 
 생성된 패키지와 manifest는 같은 디렉터리에 보관합니다. 패키지를 직접 빌드했는지 확인하고 SHA-256을 대조한 후 설치 여부를 결정하세요. 개발 패키지의 검증 결과는 배포 승인이나 하드웨어 안전 인증을 뜻하지 않습니다.
 
 ```sh
-runtinue_package="$runtinue_package_dir/SafeClam-0.1.0-development.pkg"
+runtinue_package="$runtinue_package_dir/Runtinue-0.2.0-development.pkg"
 runtinue_manifest="$runtinue_package.manifest.json"
 shasum -a 256 "$runtinue_package"
 
@@ -96,22 +96,34 @@ sudo ./scripts/install-package.sh "$runtinue_package" \
   --apply --allow-power-mutation
 ```
 
+### 이전 이름으로 설치한 버전에서 전환
+
+SafeClam으로 설치한 버전이 남아 있으면 새 설치가 중단됩니다. 이전 앱에서 모든 보호 모드를 중단하고 메뉴바를 종료한 뒤, 기존 설치에 포함된 제거 도구를 실행하세요.
+
+```sh
+sudo '/Library/Application Support/com.example.safeclam/uninstall-safeclam'
+```
+
+제거 도구는 정상 수면을 확인한 뒤 시스템 구성요소를 제거합니다. 실패하면 파일을 직접 삭제하지 말고 기존 버전의 복구 상태를 확인하세요. 제거가 끝나면 위의 Runtinue 패키지를 설치합니다.
+
+기존 `~/Library/Application Support/SafeClam`의 설정과 기록은 보존합니다. Runtinue는 `~/Library/Application Support/Runtinue`를 사용하며 이전 보호 모드를 자동으로 재개하지 않습니다. 앱 식별자가 바뀌므로 Wi-Fi 감지용 위치 권한도 다시 허용해야 합니다.
+
 ## 기본 사용법
 
-1. `/Applications/SafeClam.app`을 실행하고, Wi-Fi를 사용할 경우 메뉴에서 감지 권한을 허용합니다.
+1. `/Applications/Runtinue.app`을 실행하고, Wi-Fi를 사용할 경우 메뉴에서 감지 권한을 허용합니다.
 2. 휴대전화의 핫스팟을 켜고, 현재 네트워크에 연결된 상태에서 Trip을 시작합니다.
 3. macOS에서 지정한 핫스팟에 연결하거나 USB 테더링으로 전환합니다.
 4. 메뉴바와 CLI에서 전환 확인과 보호 상태를 확인합니다. 상태를 확인할 수 없거나 경고가 있으면 덮개를 닫지 마세요.
 5. 도착하면 Trip을 중단하고 정상 수면 설정으로 복구되었는지 확인합니다.
 
 ```sh
-safeclam trip start --for 60m --hotspot "My Hotspot"
+runtinue trip start --for 60m --hotspot "My Hotspot"
 
 # USB 테더링을 사용한다면 Wi-Fi 명령 대신 다음 명령을 사용합니다.
-safeclam trip start --for 60m --usb-tether
+runtinue trip start --for 60m --usb-tether
 
-safeclam status
-safeclam stop
+runtinue status
+runtinue stop
 ```
 
 Trip의 기본 최대 시간은 90분입니다. 기본 보호 정책에서는 배터리로 동작하고 외부 화면 없이 덮개가 닫혀 있을 때 배터리 잔량 30% 미만 또는 열 상태 `fair` 이상이면 실행 유지를 중단합니다. 다른 기기 상태에서는 적용 기준이 달라지며, 저전력 모드에서는 더 엄격한 기준을 적용합니다. 이 수치는 소프트웨어 정책이며 안전 인증 기준으로 사용할 수 없습니다.
@@ -119,11 +131,11 @@ Trip의 기본 최대 시간은 90분입니다. 기본 보호 정책에서는 �
 ### 상태와 문제 확인
 
 ```sh
-safeclam status --json
-safeclam inspect
-safeclam diagnose
-safeclam history --limit 20
-safeclam events
+runtinue status --json
+runtinue inspect
+runtinue diagnose
+runtinue history --limit 20
+runtinue events
 ```
 
 기록보다 실시간 상태를 우선하세요. 복구 중이거나 상태가 불명확하면 덮개를 열고 사용을 중단하세요. 수면 억제가 남아 있는지 확인하지 않은 채 서비스 파일을 삭제하지 마세요.
@@ -133,7 +145,7 @@ safeclam events
 먼저 모든 유지 모드를 중단합니다. 제거 스크립트는 정상 수면을 확인한 뒤 시스템 구성요소를 제거하며, 확인에 실패하면 복구에 필요한 구성요소를 보존합니다. 사용자 기록과 설정은 남습니다.
 
 ```sh
-safeclam stop
+runtinue stop
 sudo ./scripts/uninstall.sh
 ```
 

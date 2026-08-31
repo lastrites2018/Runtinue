@@ -4,9 +4,9 @@ set -euo pipefail
 script_dir=${0:A:h}
 
 usage() {
-  print -u2 "사용법: release-manifest.sh create <SafeClam.pkg> <manifest.json> [development|release] [--rollback]"
-  print -u2 "       release-manifest.sh verify <SafeClam.pkg> <manifest.json> [--rollback]"
-  print -u2 "       release-manifest.sh publish <SafeClam.pkg> <manifest.json> <pointer.json>"
+  print -u2 "사용법: release-manifest.sh create <Runtinue.pkg> <manifest.json> [development|release] [--rollback]"
+  print -u2 "       release-manifest.sh verify <Runtinue.pkg> <manifest.json> [--rollback]"
+  print -u2 "       release-manifest.sh publish <Runtinue.pkg> <manifest.json> <pointer.json>"
   exit 64
 }
 
@@ -73,7 +73,7 @@ expand_package() {
     fail "패키지 component 구조가 올바르지 않음"
   local identifier
   identifier=$(/usr/bin/sed -n 's/^<pkg-info[^>]* identifier="\([^"]*\)".*/\1/p' "${package_info}")
-  [[ "${identifier}" == com.example.safeclam.pkg ]] || fail "패키지 identifier 불일치" 65
+  [[ "${identifier}" == io.github.lastrites2018.runtinue.pkg ]] || fail "패키지 identifier 불일치" 65
 }
 
 package_version() {
@@ -152,7 +152,7 @@ create_manifest() {
   local checked_signature
   if [[ "${kind_value}" == development ]]; then
     checked_signature=unsigned-development
-  elif [[ "${SAFECLAM_NOTARIZATION_VERIFIED:-NO}" == YES ]]; then
+  elif [[ "${RUNTINUE_NOTARIZATION_VERIFIED:-NO}" == YES ]]; then
     checked_signature=signed-notarized
   else
     checked_signature=signed-installer-not-notarized
@@ -167,7 +167,7 @@ create_manifest() {
       print -r -- "${signature_output}" | /usr/bin/grep -q "Status: no signature" || \
         fail "rollback development 패키지가 unsigned 상태가 아님" 65
     fi
-    SAFECLAM_SKIP_SOURCE_COMPARISON=YES \
+    RUNTINUE_SKIP_SOURCE_COMPARISON=YES \
       "${script_dir}/verify-package-payload.sh" "${pkg}" >/dev/null
   elif [[ "${kind_value}" == development ]]; then
     "${script_dir}/verify-development-package.sh" "${pkg}" >/dev/null
@@ -175,7 +175,7 @@ create_manifest() {
     "${script_dir}/verify-package-payload.sh" "${pkg}" >/dev/null
   fi
 
-  work_root=$(/usr/bin/mktemp -d /tmp/safeclam-release-manifest.XXXXXX)
+  work_root=$(/usr/bin/mktemp -d /tmp/runtinue-release-manifest.XXXXXX)
   cleanup_create() { /bin/rm -rf -- "${work_root}"; }
   trap cleanup_create EXIT
   expand_package "${pkg}" "${work_root}"
@@ -194,8 +194,9 @@ create_manifest() {
   /usr/bin/plutil -insert packageScripts -dictionary "${plist}"
   /usr/bin/plutil -insert verification -dictionary "${plist}"
   for manifest_key in \
-    safeclam safeclamHook safeclamActivity safeclamHelper safeclamSupervisor safeclamMenubar \
-    safeclamAppInfo safeclamAppCodeResources helperPlist supervisorPlist uninstallScript; do
+    runtinue runtinueHook runtinueActivity runtinueHelper runtinueSupervisor runtinueMenubar \
+    runtinueAppInfo runtinueAppCodeResources runtinueMenuIcon runtinueAppIcon \
+    helperPlist supervisorPlist uninstallScript; do
     /usr/bin/plutil -insert "artifacts.${manifest_key}" -dictionary "${plist}"
   done
   for manifest_key in helperSupervisor control activity; do
@@ -206,58 +207,64 @@ create_manifest() {
   done
 
   add_string "${plist}" kind "${kind_value}"
-  add_string "${plist}" package.identifier "com.example.safeclam.pkg"
+  add_string "${plist}" package.identifier "io.github.lastrites2018.runtinue.pkg"
   add_string "${plist}" package.version "${version_value}"
   add_string "${plist}" package.sha256 "${package_hash}"
   add_string "${plist}" package.signatureStatus "${checked_signature}"
 
-  add_artifact "${plist}" safeclam \
-    "usr/local/bin/safeclam" "/usr/local/bin/safeclam"
-  add_artifact "${plist}" safeclamHook \
-    "usr/local/bin/safeclam-hook" "/usr/local/bin/safeclam-hook"
-  add_artifact "${plist}" safeclamActivity \
-    "usr/local/bin/safeclam-activity" "/usr/local/bin/safeclam-activity"
-  add_artifact "${plist}" safeclamHelper \
-    "Library/Application Support/com.example.safeclam/bin/safeclam-helper" \
-    "/Library/Application Support/com.example.safeclam/bin/safeclam-helper"
-  add_artifact "${plist}" safeclamSupervisor \
-    "Library/Application Support/com.example.safeclam/bin/safeclam-supervisor" \
-    "/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor"
-  add_artifact "${plist}" safeclamMenubar \
-    "Applications/SafeClam.app/Contents/MacOS/safeclam-menubar" \
-    "/Applications/SafeClam.app/Contents/MacOS/safeclam-menubar"
-  add_artifact "${plist}" safeclamAppInfo \
-    "Applications/SafeClam.app/Contents/Info.plist" \
-    "/Applications/SafeClam.app/Contents/Info.plist"
-  add_artifact "${plist}" safeclamAppCodeResources \
-    "Applications/SafeClam.app/Contents/_CodeSignature/CodeResources" \
-    "/Applications/SafeClam.app/Contents/_CodeSignature/CodeResources"
+  add_artifact "${plist}" runtinue \
+    "usr/local/bin/runtinue" "/usr/local/bin/runtinue"
+  add_artifact "${plist}" runtinueHook \
+    "usr/local/bin/runtinue-hook" "/usr/local/bin/runtinue-hook"
+  add_artifact "${plist}" runtinueActivity \
+    "usr/local/bin/runtinue-activity" "/usr/local/bin/runtinue-activity"
+  add_artifact "${plist}" runtinueHelper \
+    "Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper" \
+    "/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper"
+  add_artifact "${plist}" runtinueSupervisor \
+    "Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor" \
+    "/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
+  add_artifact "${plist}" runtinueMenubar \
+    "Applications/Runtinue.app/Contents/MacOS/runtinue-menubar" \
+    "/Applications/Runtinue.app/Contents/MacOS/runtinue-menubar"
+  add_artifact "${plist}" runtinueAppInfo \
+    "Applications/Runtinue.app/Contents/Info.plist" \
+    "/Applications/Runtinue.app/Contents/Info.plist"
+  add_artifact "${plist}" runtinueAppCodeResources \
+    "Applications/Runtinue.app/Contents/_CodeSignature/CodeResources" \
+    "/Applications/Runtinue.app/Contents/_CodeSignature/CodeResources"
+  add_artifact "${plist}" runtinueMenuIcon \
+    "Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png" \
+    "/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
+  add_artifact "${plist}" runtinueAppIcon \
+    "Applications/Runtinue.app/Contents/Resources/Runtinue.icns" \
+    "/Applications/Runtinue.app/Contents/Resources/Runtinue.icns"
   add_artifact "${plist}" helperPlist \
-    "Library/LaunchDaemons/com.example.safeclam.helper.plist" \
-    "/Library/LaunchDaemons/com.example.safeclam.helper.plist"
+    "Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist" \
+    "/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist"
   add_artifact "${plist}" supervisorPlist \
-    "Library/LaunchAgents/com.example.safeclam.supervisor.plist" \
-    "/Library/LaunchAgents/com.example.safeclam.supervisor.plist"
+    "Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist" \
+    "/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
   add_artifact "${plist}" uninstallScript \
-    "Library/Application Support/com.example.safeclam/uninstall-safeclam" \
-    "/Library/Application Support/com.example.safeclam/uninstall-safeclam"
+    "Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue" \
+    "/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue"
   add_string "${plist}" buildID \
-    "$(sha256 "${payload_root}/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor")"
+    "$(sha256 "${payload_root}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor")"
 
   add_requirement "${plist}" helperSupervisor \
-    "Library/Application Support/com.example.safeclam/helper/supervisor.requirement" \
-    "/Library/Application Support/com.example.safeclam/helper/supervisor.requirement"
+    "Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement" \
+    "/Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement"
   add_requirement "${plist}" control \
-    "Library/Application Support/com.example.safeclam/supervisor/control.requirement" \
-    "/Library/Application Support/com.example.safeclam/supervisor/control.requirement"
+    "Library/Application Support/io.github.lastrites2018.runtinue/supervisor/control.requirement" \
+    "/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/control.requirement"
   add_requirement "${plist}" activity \
-    "Library/Application Support/com.example.safeclam/supervisor/activity.requirement" \
-    "/Library/Application Support/com.example.safeclam/supervisor/activity.requirement"
+    "Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement" \
+    "/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement"
 
   add_script "${plist}" preinstall preinstall
   add_script "${plist}" postinstall postinstall
   add_script "${plist}" uninstall \
-    "../Payload/Library/Application Support/com.example.safeclam/uninstall-safeclam"
+    "../Payload/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue"
 
   add_string "${plist}" verification.payload "passed"
   add_string "${plist}" verification.archiveHash "sha256"
@@ -310,7 +317,7 @@ verify_manifest() {
   kind=$(manifest_value kind "${manifest}") || fail "manifest kind 누락" 65
   [[ "${kind}" == development || "${kind}" == release ]] || fail "manifest kind 오류" 65
   signature_status=$(manifest_value package.signatureStatus "${manifest}") || fail "manifest package.signatureStatus 누락" 65
-  [[ "$(manifest_value package.identifier "${manifest}")" == com.example.safeclam.pkg ]] || \
+  [[ "$(manifest_value package.identifier "${manifest}")" == io.github.lastrites2018.runtinue.pkg ]] || \
     fail "manifest package.identifier 불일치" 65
   if [[ "${kind}" == development ]]; then
     [[ "${signature_status}" == "unsigned-development" ]] || \
@@ -327,7 +334,7 @@ verify_manifest() {
   [[ "${actual_pkg:l}" == "${expected_pkg:l}" ]] || fail "패키지 SHA-256 불일치" 65
   verify_package_signature "${pkg}" "${kind}" "${signature_status}"
 
-  work_root=$(/usr/bin/mktemp -d /tmp/safeclam-release-manifest-verify.XXXXXX)
+  work_root=$(/usr/bin/mktemp -d /tmp/runtinue-release-manifest-verify.XXXXXX)
   cleanup_verify() { /bin/rm -rf -- "${work_root}"; }
   trap cleanup_verify EXIT
   expand_package "${pkg}" "${work_root}"
@@ -336,41 +343,46 @@ verify_manifest() {
   [[ "${actual_version}" == "${expected_version}" ]] || fail "패키지 version 불일치" 65
 
   if [[ "${rollback}" == YES ]]; then
-    SAFECLAM_SKIP_SOURCE_COMPARISON=YES "${script_dir}/verify-package-payload.sh" "${pkg}" >/dev/null
+    RUNTINUE_SKIP_SOURCE_COMPARISON=YES "${script_dir}/verify-package-payload.sh" "${pkg}" >/dev/null
   else
     "${script_dir}/verify-package-payload.sh" "${pkg}" >/dev/null
   fi
 
   local key payload_path file expected_path expected_payload expected_installed expected_build_id supervisor_hash
   local -a artifact_keys=(
-    safeclam safeclamHook safeclamActivity safeclamHelper safeclamSupervisor safeclamMenubar
-    safeclamAppInfo safeclamAppCodeResources helperPlist supervisorPlist uninstallScript
+    runtinue runtinueHook runtinueActivity runtinueHelper runtinueSupervisor runtinueMenubar
+    runtinueAppInfo runtinueAppCodeResources runtinueMenuIcon runtinueAppIcon
+    helperPlist supervisorPlist uninstallScript
   )
   local -a artifact_payload_paths=(
-    "usr/local/bin/safeclam"
-    "usr/local/bin/safeclam-hook"
-    "usr/local/bin/safeclam-activity"
-    "Library/Application Support/com.example.safeclam/bin/safeclam-helper"
-    "Library/Application Support/com.example.safeclam/bin/safeclam-supervisor"
-    "Applications/SafeClam.app/Contents/MacOS/safeclam-menubar"
-    "Applications/SafeClam.app/Contents/Info.plist"
-    "Applications/SafeClam.app/Contents/_CodeSignature/CodeResources"
-    "Library/LaunchDaemons/com.example.safeclam.helper.plist"
-    "Library/LaunchAgents/com.example.safeclam.supervisor.plist"
-    "Library/Application Support/com.example.safeclam/uninstall-safeclam"
+    "usr/local/bin/runtinue"
+    "usr/local/bin/runtinue-hook"
+    "usr/local/bin/runtinue-activity"
+    "Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper"
+    "Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
+    "Applications/Runtinue.app/Contents/MacOS/runtinue-menubar"
+    "Applications/Runtinue.app/Contents/Info.plist"
+    "Applications/Runtinue.app/Contents/_CodeSignature/CodeResources"
+    "Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
+    "Applications/Runtinue.app/Contents/Resources/Runtinue.icns"
+    "Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist"
+    "Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
+    "Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue"
   )
   local -a artifact_installed_paths=(
-    "/usr/local/bin/safeclam"
-    "/usr/local/bin/safeclam-hook"
-    "/usr/local/bin/safeclam-activity"
-    "/Library/Application Support/com.example.safeclam/bin/safeclam-helper"
-    "/Library/Application Support/com.example.safeclam/bin/safeclam-supervisor"
-    "/Applications/SafeClam.app/Contents/MacOS/safeclam-menubar"
-    "/Applications/SafeClam.app/Contents/Info.plist"
-    "/Applications/SafeClam.app/Contents/_CodeSignature/CodeResources"
-    "/Library/LaunchDaemons/com.example.safeclam.helper.plist"
-    "/Library/LaunchAgents/com.example.safeclam.supervisor.plist"
-    "/Library/Application Support/com.example.safeclam/uninstall-safeclam"
+    "/usr/local/bin/runtinue"
+    "/usr/local/bin/runtinue-hook"
+    "/usr/local/bin/runtinue-activity"
+    "/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper"
+    "/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
+    "/Applications/Runtinue.app/Contents/MacOS/runtinue-menubar"
+    "/Applications/Runtinue.app/Contents/Info.plist"
+    "/Applications/Runtinue.app/Contents/_CodeSignature/CodeResources"
+    "/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
+    "/Applications/Runtinue.app/Contents/Resources/Runtinue.icns"
+    "/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist"
+    "/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
+    "/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue"
   )
   expected_build_id=$(manifest_value buildID "${manifest}") || fail "manifest buildID 누락" 65
   valid_sha256 "${expected_build_id}" || fail "manifest buildID 형식 오류" 65
@@ -388,14 +400,14 @@ verify_manifest() {
 
   local -a requirement_keys=(helperSupervisor control activity)
   local -a requirement_payload_paths=(
-    "Library/Application Support/com.example.safeclam/helper/supervisor.requirement"
-    "Library/Application Support/com.example.safeclam/supervisor/control.requirement"
-    "Library/Application Support/com.example.safeclam/supervisor/activity.requirement"
+    "Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement"
+    "Library/Application Support/io.github.lastrites2018.runtinue/supervisor/control.requirement"
+    "Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement"
   )
   local -a requirement_installed_paths=(
-    "/Library/Application Support/com.example.safeclam/helper/supervisor.requirement"
-    "/Library/Application Support/com.example.safeclam/supervisor/control.requirement"
-    "/Library/Application Support/com.example.safeclam/supervisor/activity.requirement"
+    "/Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement"
+    "/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/control.requirement"
+    "/Library/Application Support/io.github.lastrites2018.runtinue/supervisor/activity.requirement"
   )
   for key in "${requirement_keys[@]}"; do
     local index=$(( ${requirement_keys[(I)${key}]} ))
@@ -409,7 +421,7 @@ verify_manifest() {
     verify_hash_field "${manifest}" "requirements.${key}" "${file}"
   done
 
-  supervisor_hash=$(manifest_value artifacts.safeclamSupervisor.sha256 "${manifest}") || fail "Supervisor hash 누락" 65
+  supervisor_hash=$(manifest_value artifacts.runtinueSupervisor.sha256 "${manifest}") || fail "Supervisor hash 누락" 65
   [[ "${supervisor_hash:l}" == "${expected_build_id:l}" ]] || fail "manifest buildID가 Supervisor hash와 다름" 65
 
   local script_key script_rel expected_script_path
@@ -417,7 +429,7 @@ verify_manifest() {
   local -a script_paths=(
     "preinstall"
     "postinstall"
-    "../Payload/Library/Application Support/com.example.safeclam/uninstall-safeclam"
+    "../Payload/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue"
   )
   for script_key in "${script_keys[@]}"; do
     local index=$(( ${script_keys[(I)${script_key}]} ))
@@ -454,7 +466,7 @@ publish_pointer() {
   fi
 
   local work_root pointer_plist tmp manifest_hash package_hash
-  work_root=$(/usr/bin/mktemp -d /tmp/safeclam-release-pointer.XXXXXX)
+  work_root=$(/usr/bin/mktemp -d /tmp/runtinue-release-pointer.XXXXXX)
   cleanup_pointer() { /bin/rm -rf -- "${work_root}"; }
   trap cleanup_pointer EXIT
   manifest_hash=$(sha256 "${manifest}")

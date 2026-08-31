@@ -4,7 +4,7 @@ set -euo pipefail
 script_dir=${0:A:h}
 pkg=${1:-}
 test -n "${pkg}" && test -f "${pkg}" || {
-  print -u2 "사용법: verify-release.sh <SafeClam.pkg>"
+  print -u2 "사용법: verify-release.sh <Runtinue.pkg>"
   exit 64
 }
 
