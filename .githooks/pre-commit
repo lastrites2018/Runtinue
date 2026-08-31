@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+exec bash "$(git rev-parse --show-toplevel)/scripts/verify-public-tree.sh" --staged

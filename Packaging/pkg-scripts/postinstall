@@ -1,0 +1,103 @@
+#!/bin/zsh
+set -euo pipefail
+
+target_volume=${3:-/}
+if [[ "${target_volume}" != "/" ]]; then
+  print -u2 "지원하지 않는 설치 볼륨"
+  exit 64
+fi
+
+support_root="/Library/Application Support/com.example.safeclam"
+sleep_state() {
+  local output
+  output=$(/usr/sbin/ioreg -r -n IOPMrootDomain -d 1 2>/dev/null) || {
+    print "unknown"
+    return
+  }
+  if print -r -- "${output}" | /usr/bin/grep -q '"SleepDisabled" = No'; then
+    print "normal"
+  elif print -r -- "${output}" | /usr/bin/grep -q '"SleepDisabled" = Yes'; then
+    print "disabled"
+  else
+    print "unknown"
+  fi
+}
+
+/usr/sbin/chown -R root:wheel "${support_root}"
+/bin/chmod 0755 "${support_root}" "${support_root}/bin" "${support_root}/supervisor"
+/bin/chmod 0700 "${support_root}/helper"
+/bin/chmod 0755 "${support_root}/bin/"* "${support_root}/uninstall-safeclam"
+/bin/chmod 0600 "${support_root}/helper/supervisor.requirement"
+/bin/chmod 0644 "${support_root}/supervisor/control.requirement" "${support_root}/supervisor/activity.requirement"
+/usr/sbin/chown root:wheel /Library/LaunchDaemons/com.example.safeclam.helper.plist
+/usr/sbin/chown root:wheel /Library/LaunchAgents/com.example.safeclam.supervisor.plist
+/bin/chmod 0644 /Library/LaunchDaemons/com.example.safeclam.helper.plist /Library/LaunchAgents/com.example.safeclam.supervisor.plist
+/usr/bin/install -d -o root -g wheel -m 0755 /Library/Logs/com.example.safeclam
+/usr/bin/touch /Library/Logs/com.example.safeclam/helper.log
+/usr/sbin/chown root:wheel /Library/Logs/com.example.safeclam/helper.log
+/bin/chmod 0600 /Library/Logs/com.example.safeclam/helper.log
+
+console_uid=$(/usr/bin/stat -f %u /dev/console 2>/dev/null || print 0)
+helper_was_loaded=0
+supervisor_was_loaded=0
+helper_confirmed_normal=0
+if /bin/launchctl print system/com.example.safeclam.helper >/dev/null 2>&1; then
+  helper_was_loaded=1
+fi
+if [[ "${console_uid}" -ge 500 ]] && \
+  /bin/launchctl print "gui/${console_uid}/com.example.safeclam.supervisor" >/dev/null 2>&1
+then
+  supervisor_was_loaded=1
+fi
+
+restore_launchd_state_after_failure() {
+  local exit_status=$?
+  trap - EXIT
+  [[ "${exit_status}" -eq 0 ]] && return
+
+  if [[ "${helper_was_loaded}" -eq 1 || "${helper_confirmed_normal}" -eq 0 ]]; then
+    /bin/launchctl bootstrap system /Library/LaunchDaemons/com.example.safeclam.helper.plist >/dev/null 2>&1 || true
+    /bin/launchctl enable system/com.example.safeclam.helper >/dev/null 2>&1 || true
+    /bin/launchctl kickstart system/com.example.safeclam.helper >/dev/null 2>&1 || true
+  else
+    /bin/launchctl bootout system /Library/LaunchDaemons/com.example.safeclam.helper.plist >/dev/null 2>&1 || true
+  fi
+
+  if [[ "${console_uid}" -ge 500 && "${supervisor_was_loaded}" -eq 1 ]]; then
+    /bin/launchctl bootstrap "gui/${console_uid}" /Library/LaunchAgents/com.example.safeclam.supervisor.plist >/dev/null 2>&1 || true
+    /bin/launchctl enable "gui/${console_uid}/com.example.safeclam.supervisor" >/dev/null 2>&1 || true
+    /bin/launchctl kickstart "gui/${console_uid}/com.example.safeclam.supervisor" >/dev/null 2>&1 || true
+  elif [[ "${console_uid}" -ge 500 ]]; then
+    /bin/launchctl bootout "gui/${console_uid}" /Library/LaunchAgents/com.example.safeclam.supervisor.plist >/dev/null 2>&1 || true
+  fi
+
+  exit "${exit_status}"
+}
+trap restore_launchd_state_after_failure EXIT
+
+if [[ "${console_uid}" -ge 500 ]]; then
+  /bin/launchctl bootout "gui/${console_uid}" /Library/LaunchAgents/com.example.safeclam.supervisor.plist >/dev/null 2>&1 || true
+fi
+/bin/launchctl bootout system /Library/LaunchDaemons/com.example.safeclam.helper.plist >/dev/null 2>&1 || true
+/bin/launchctl bootstrap system /Library/LaunchDaemons/com.example.safeclam.helper.plist
+/bin/launchctl enable system/com.example.safeclam.helper
+
+for _ in {1..30}; do
+  [[ "$(sleep_state)" == "normal" ]] && break
+  /bin/sleep 1
+done
+if [[ "$(sleep_state)" != "normal" ]]; then
+  print -u2 "새 helper 시작 뒤 정상 수면을 확인하지 못했습니다. Supervisor를 시작하지 않습니다"
+  exit 70
+fi
+helper_confirmed_normal=1
+/bin/launchctl print system/com.example.safeclam.helper >/dev/null
+
+if [[ "${console_uid}" -ge 500 ]]; then
+  /bin/launchctl bootstrap "gui/${console_uid}" /Library/LaunchAgents/com.example.safeclam.supervisor.plist
+  /bin/launchctl enable "gui/${console_uid}/com.example.safeclam.supervisor"
+  /bin/launchctl print "gui/${console_uid}/com.example.safeclam.supervisor" >/dev/null
+fi
+
+trap - EXIT
+exit 0

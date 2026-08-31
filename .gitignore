@@ -1,0 +1,36 @@
+# 공개 파일은 아래 허용 목록으로만 추가합니다.
+*
+!*/
+!/.gitignore
+!/README.md
+!/LICENSE
+!/Package.swift
+!/Sources/**/*.swift
+!/Tests/**/*.swift
+!/scripts/*.sh
+!/Resources/*.plist
+!/Resources/*.requirement.example
+!/Packaging/SafeClam.app.Info.plist
+!/Packaging/pkg-scripts/preinstall
+!/Packaging/pkg-scripts/postinstall
+!/Casks/*.rb.template
+!/.githooks/pre-commit
+!/.githooks/pre-push
+!/.github/workflows/checks.yml
+
+# 로컬 자료와 생성물은 하위 파일도 탐색하지 않습니다.
+.build/
+.swiftpm/
+.release/
+.cache/
+.codex/
+.agents/
+.claude/
+.idea/
+.vscode/
+node_modules/
+[dD][oO][cC][sS]/
+[dD][oO][cC][uU][mM][eE][nN][tT][sS]/
+[pP][lL][aA][nN][sS]/
+[nN][oO][tT][eE][sS]/
+.DS_Store

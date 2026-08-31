@@ -1,0 +1,1 @@
+anchor apple generic and certificate leaf[subject.OU] = "TEAMID1234" and (identifier "com.example.safeclam.cli" or identifier "com.example.safeclam.app")

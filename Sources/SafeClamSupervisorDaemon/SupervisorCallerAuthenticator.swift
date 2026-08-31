@@ -1,0 +1,86 @@
+import Darwin
+import Foundation
+import Security
+
+enum SupervisorCallerRole: String, Sendable {
+  case control
+  case activity
+}
+
+struct SupervisorCallerAuthenticator: Sendable {
+  static let productionDirectory = URL(
+    fileURLWithPath: "/Library/Application Support/com.example.safeclam/supervisor",
+    isDirectory: true
+  )
+
+  let role: SupervisorCallerRole
+  let requirementURL: URL
+
+  init(
+    role: SupervisorCallerRole,
+    requirementURL: URL? = nil
+  ) {
+    self.role = role
+    self.requirementURL =
+      requirementURL
+      ?? Self.productionDirectory.appendingPathComponent(
+        "\(role.rawValue).requirement",
+        isDirectory: false
+      )
+  }
+
+  func accepts(_ connection: NSXPCConnection) -> Bool {
+    guard connection.effectiveUserIdentifier == geteuid(),
+      connection.processIdentifier > 0,
+      let requirement = loadRequirement()
+    else {
+      return false
+    }
+
+    let attributes =
+      [
+        kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)
+      ] as CFDictionary
+    var code: SecCode?
+    guard
+      SecCodeCopyGuestWithAttributes(nil, attributes, SecCSFlags(), &code) == errSecSuccess,
+      let code
+    else {
+      return false
+    }
+
+    // SecCode is dynamic code. Static-only validation flags are rejected by
+    // SecCodeCheckValidity on current macOS; the package verifier performs the
+    // separate strict, all-architectures check before installation.
+    return SecCodeCheckValidity(code, SecCSFlags(), requirement) == errSecSuccess
+  }
+
+  private func loadRequirement() -> SecRequirement? {
+    var info = stat()
+    guard lstat(requirementURL.path, &info) == 0,
+      info.st_mode & S_IFMT == S_IFREG,
+      info.st_uid == 0,
+      info.st_mode & 0o022 == 0,
+      info.st_size > 0,
+      info.st_size <= 16 * 1_024,
+      let data = try? Data(contentsOf: requirementURL, options: [.uncached]),
+      let text = String(data: data, encoding: .utf8)?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !text.isEmpty
+    else {
+      return nil
+    }
+
+    var requirement: SecRequirement?
+    guard
+      SecRequirementCreateWithString(
+        text as CFString,
+        SecCSFlags(),
+        &requirement
+      ) == errSecSuccess
+    else {
+      return nil
+    }
+    return requirement
+  }
+}

@@ -1,0 +1,39 @@
+name: Repository checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-boundary:
+    name: public-boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: 공개할 전체 이력 검사
+        run: bash scripts/verify-public-tree.sh --history HEAD
+      - name: 문서 유출 방지 회귀 검사
+        run: bash scripts/test-public-boundary.sh
+
+  swift-tests:
+    name: swift-tests
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: 전원 변경 없는 테스트
+        run: ./scripts/test.sh
