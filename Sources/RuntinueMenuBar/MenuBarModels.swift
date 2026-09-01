@@ -3,6 +3,7 @@ import RuntinueIPC
 
 enum MenuBarConfigurationError: Error, Equatable, LocalizedError {
   case hotspotRequired
+  case hotspotConfirmationRequired
   case hotspotTooLong(maximumBytes: Int)
   case invalidMinutes(field: String, maximum: Double)
 
@@ -10,6 +11,8 @@ enum MenuBarConfigurationError: Error, Equatable, LocalizedError {
     switch self {
     case .hotspotRequired:
       "핫스팟 이름을 입력하세요."
+    case .hotspotConfirmationRequired:
+      "입력한 이름이 이동 중 사용할 휴대전화 핫스팟인지 확인하세요."
     case .hotspotTooLong(let maximumBytes):
       "핫스팟 이름은 UTF-8 기준 \(maximumBytes)바이트 이하여야 합니다."
     case .invalidMinutes(let field, let maximum):
@@ -35,6 +38,7 @@ struct TripFormInput: Equatable, Sendable {
   let hotspotSSID: String
   let protectionMinutes: String
   let handoffTimeoutMinutes: String
+  var hotspotConfirmed = false
 
   func makeRequest() throws -> StartTripWireRequest {
     let hardCapSeconds = try parseMinutes(
@@ -51,10 +55,12 @@ struct TripFormInput: Equatable, Sendable {
     switch target {
     case .wifiHotspot:
       let normalizedSSID = try Self.validatedHotspotSSID(hotspotSSID)
+      guard hotspotConfirmed else { throw MenuBarConfigurationError.hotspotConfirmationRequired }
       return StartTripWireRequest(
         expectedHotspotSSID: normalizedSSID,
         hotspotHandoffTimeoutSeconds: handoffTimeoutSeconds,
-        hardCapSeconds: hardCapSeconds
+        hardCapSeconds: hardCapSeconds,
+        allowAlreadyConnected: true
       )
     case .usbTethering:
       return StartTripWireRequest(

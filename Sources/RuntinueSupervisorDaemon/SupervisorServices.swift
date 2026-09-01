@@ -35,7 +35,8 @@ final class SupervisorControlService: NSObject, SupervisorControlXPCProtocol,
       try await runtime.startTrip(
         networkTarget: networkTarget,
         hotspotHandoffTimeout: .seconds(decoded.hotspotHandoffTimeoutSeconds),
-        hardCap: .seconds(decoded.hardCapSeconds)
+        hardCap: .seconds(decoded.hardCapSeconds),
+        allowAlreadyConnected: decoded.allowAlreadyConnected
       )
     }
   }
@@ -252,7 +253,7 @@ final class SupervisorControlService: NSObject, SupervisorControlXPCProtocol,
       }
       return .wifiHotspot(ssid: ssid)
     case .usbTethering:
-      guard request.expectedHotspotSSID == nil else {
+      guard request.expectedHotspotSSID == nil, !request.allowAlreadyConnected else {
         return nil
       }
       return .usbTethering

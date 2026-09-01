@@ -24,6 +24,14 @@ final class PrivilegedLeaseService: NSObject, PrivilegedLeaseXPCProtocol,
       RuntinueIPCContract.acceptsRequest(
         protocolVersion: decoded.protocolVersion,
         byteCount: request.count
+      ),
+      let ttl = RuntinueIPCContract.validatedDuration(
+        seconds: decoded.ttlSeconds,
+        maximumSeconds: Double(LeaseAcquireRequest.maximumTTL.components.seconds)
+      ),
+      let hardCap = RuntinueIPCContract.validatedDuration(
+        seconds: decoded.hardCapSeconds,
+        maximumSeconds: Double(LeaseAcquireRequest.maximumHardCap.components.seconds)
       )
     else {
       replyBox.call(invalidRequestResponse("invalid acquire request"))
@@ -35,8 +43,8 @@ final class PrivilegedLeaseService: NSObject, PrivilegedLeaseXPCProtocol,
         LeaseAcquireRequest(
           leaseID: decoded.leaseID,
           ownerUID: ownerUID,
-          ttl: .seconds(decoded.ttlSeconds),
-          hardCap: .seconds(decoded.hardCapSeconds),
+          ttl: ttl,
+          hardCap: hardCap,
           reason: decoded.reason
         )
       )
@@ -51,6 +59,10 @@ final class PrivilegedLeaseService: NSObject, PrivilegedLeaseXPCProtocol,
       RuntinueIPCContract.acceptsRequest(
         protocolVersion: decoded.protocolVersion,
         byteCount: request.count
+      ),
+      let ttl = RuntinueIPCContract.validatedDuration(
+        seconds: decoded.ttlSeconds,
+        maximumSeconds: Double(LeaseAcquireRequest.maximumTTL.components.seconds)
       )
     else {
       replyBox.call(invalidRequestResponse("invalid renew request"))
@@ -61,7 +73,7 @@ final class PrivilegedLeaseService: NSObject, PrivilegedLeaseXPCProtocol,
       let result = await leaseActor.renew(
         leaseID: decoded.leaseID,
         ownerUID: ownerUID,
-        ttl: .seconds(decoded.ttlSeconds)
+        ttl: ttl
       )
       replyBox.call(encodeMutationResult(result))
     }
@@ -181,8 +193,8 @@ final class PrivilegedLeaseService: NSObject, PrivilegedLeaseXPCProtocol,
       leaseID: status.leaseID,
       ownerUID: status.ownerUID,
       sleepOverride: sleepOverride,
-      ttlDeadlineUptimeNanoseconds: status.ttlDeadline?.uptimeNanoseconds,
-      hardDeadlineUptimeNanoseconds: status.hardDeadline?.uptimeNanoseconds,
+      ttlDeadlineContinuousNanoseconds: status.ttlDeadline?.continuousNanoseconds,
+      hardDeadlineContinuousNanoseconds: status.hardDeadline?.continuousNanoseconds,
       detail: status.detail ?? observedDetail
     )
   }

@@ -34,7 +34,7 @@ public actor DeskModeController {
   public init(
     directController: DirectSafetyLeaseController,
     assertionBackend: any UserPowerAssertionBackend,
-    clock: any MonotonicTimeSource = SystemUptimeClock()
+    clock: any MonotonicTimeSource = SystemContinuousClock()
   ) {
     self.directController = directController
     self.assertionBackend = assertionBackend

@@ -205,6 +205,11 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func render(_ status: SupervisorStatusWire?) {
+    if let status, tripPreferences.hasPendingVerification {
+      tripPreferences.observeProtection(
+        status, network: wifiAuthorization.isAuthorized ? networkProbe.currentConnection() : nil
+      )
+    }
     let presentation = MenuBarPresentation(
       status: status,
       isCommandInFlight: commandController.isCommandInFlight
@@ -236,9 +241,11 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   }
 
   @objc private func startTrip() {
+    let currentNetwork = wifiAuthorization.isAuthorized ? networkProbe.currentConnection() : nil
     let form = TripConfigurationView(
       rememberedHotspotSSID: tripPreferences.lastHotspotSSID,
-      currentWiFiSSID: wifiAuthorization.isAuthorized ? networkProbe.currentWiFiSSID() : nil
+      currentWiFiSSID: currentNetwork?.ssid,
+      confirmedHotspotSSID: tripPreferences.confirmedHotspotSSID(for: currentNetwork)
     )
     let alert = configurationAlert(
       title: "통근 보호 시작",
@@ -252,14 +259,16 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
 
     do {
       let request = try form.input.makeRequest()
-      tripPreferences.remember(request)
+      tripPreferences.rememberInput(request)
       if request.networkTargetKind == .wifiHotspot, !wifiAuthorization.isAuthorized {
         wifiAuthorization.request()
         updateWiFiPermissionItem()
         throw MenuBarUIError.wifiPermissionRequired
       }
-      performCommand { [client] in
-        try await client.startTrip(request)
+      performCommand { [client, tripPreferences] in
+        let status = try await client.startTrip(request)
+        tripPreferences.registerAcceptedRequest(request, status: status)
+        return status
       }
     } catch {
       showError(error)

@@ -5,6 +5,7 @@
 !/README.md
 !/LICENSE
 !/Package.swift
+!/VERSION
 !/Sources/**/*.swift
 !/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png
 !/Packaging/RuntinueIcon.png

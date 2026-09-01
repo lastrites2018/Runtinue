@@ -20,11 +20,13 @@ mkdir -p "${mock_root}" "${fixture_root}/Applications" "${fixture_root}/usr/loca
   -e "s|/Library/|${fixture_root}/Library/|g" \
   -e "s|/usr/local/bin/|${fixture_root}/usr/local/bin/|g" \
   -e "s|/usr/bin/stat|${mock_root}/stat|g" \
+  -e "s|/usr/bin/uname|${mock_root}/uname|g" \
   -e "s|/usr/sbin/ioreg|${mock_root}/ioreg|g" \
   -e "s|/bin/launchctl|${mock_root}/launchctl|g" \
   -e "s|/bin/sleep|${mock_root}/sleep|g" \
   "${project_root}/Packaging/pkg-scripts/preinstall" > "${preflight}"
 printf '%s\n' '#!/bin/zsh' 'print 501' > "${mock_root}/stat"
+printf '%s\n' '#!/bin/zsh' 'print -r -- "${RUNTINUE_TEST_ARCH:-arm64}"' > "${mock_root}/uname"
 printf '%s\n' '#!/bin/zsh' \
   'print -r -- "\"SleepDisabled\" = ${RUNTINUE_TEST_SLEEP_STATE:-No}"' > "${mock_root}/ioreg"
 printf '%s\n' '#!/bin/zsh' \
@@ -34,7 +36,7 @@ printf '%s\n' '#!/bin/zsh' \
   '[[ "$2" == gui/501/com.example.safeclam.supervisor && "${RUNTINUE_TEST_SUPERVISOR_LOADED:-NO}" == YES ]] && exit 0' \
   'exit 113' > "${mock_root}/launchctl"
 printf '%s\n' '#!/bin/zsh' 'exit 97' > "${mock_root}/sleep"
-chmod +x "${mock_root}/stat" "${mock_root}/ioreg" "${mock_root}/launchctl" "${mock_root}/sleep"
+chmod +x "${mock_root}/stat" "${mock_root}/uname" "${mock_root}/ioreg" "${mock_root}/launchctl" "${mock_root}/sleep"
 
 passed=0
 expect_preflight() {
@@ -59,6 +61,8 @@ expect_preflight() {
 }
 
 expect_preflight 0 "새 설치와 정상 수면"
+RUNTINUE_TEST_ARCH=x86_64 expect_preflight 65 "Intel과 Rosetta 설치는 서비스 변경 전 차단"
+RUNTINUE_TEST_ARCH=unknown expect_preflight 65 "확인 불가능한 아키텍처 차단"
 for legacy_path in \
   /Applications/SafeClam.app \
   /usr/local/bin/safeclam \

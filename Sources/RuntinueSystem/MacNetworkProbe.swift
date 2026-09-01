@@ -6,7 +6,7 @@ import SystemConfiguration
 public struct MacNetworkProbe: Sendable {
   private let clock: any MonotonicTimeSource
 
-  public init(clock: any MonotonicTimeSource = SystemUptimeClock()) {
+  public init(clock: any MonotonicTimeSource = SystemContinuousClock()) {
     self.clock = clock
   }
 
@@ -16,6 +16,27 @@ public struct MacNetworkProbe: Sendable {
   }
 
   public func snapshot(confirmInternet: Bool = false) async -> NetworkSnapshot {
+    let network = currentConnection()
+    guard confirmInternet, network.routeReachable else { return network }
+    let internet = await Self.confirmInternetReachability()
+    return Self.applyingInternetCheck(internet, from: network, to: currentConnection())
+  }
+
+  static func applyingInternetCheck(
+    _ internet: InternetReachability, from network: NetworkSnapshot, to current: NetworkSnapshot
+  ) -> NetworkSnapshot {
+    let unchanged = network.ssid == current.ssid
+      && network.interfaceName == current.interfaceName && network.gateway == current.gateway
+    return NetworkSnapshot(
+      ssid: current.ssid, interfaceName: current.interfaceName, gateway: current.gateway,
+      routeReachable: current.routeReachable,
+      internetReachability: unchanged && network.routeReachable && current.routeReachable
+        ? internet : .unchecked,
+      capturedAt: current.capturedAt
+    )
+  }
+
+  public func currentConnection() -> NetworkSnapshot {
     let wifiInterface = Self.wifiInterface()
     let route = Self.readDefaultRoute()
     let primaryInterface = route.interfaceName ?? wifiInterface?.interfaceName
@@ -24,19 +45,12 @@ public struct MacNetworkProbe: Sendable {
       ? wifiInterface?.ssid()
       : nil
     let routeReachable = Self.defaultRouteIsReachable()
-    let internetReachability: InternetReachability
-    if confirmInternet && routeReachable {
-      internetReachability = await Self.confirmInternetReachability()
-    } else {
-      internetReachability = .unchecked
-    }
-
     return NetworkSnapshot(
       ssid: ssid,
       interfaceName: primaryInterface,
       gateway: route.gateway,
       routeReachable: routeReachable,
-      internetReachability: internetReachability,
+      internetReachability: .unchecked,
       capturedAt: clock.now()
     )
   }

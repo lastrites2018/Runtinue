@@ -30,6 +30,7 @@ required_paths=(
   "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper"
   "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor"
   "${payload}/Applications/Runtinue.app"
+  "${payload}/Applications/Runtinue.app/Contents/MacOS/runtinue-menubar"
   "${payload}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
   "${payload}/Applications/Runtinue.app/Contents/Resources/Runtinue.icns"
   "${payload}/Library/LaunchDaemons/io.github.lastrites2018.runtinue.helper.plist"
@@ -42,7 +43,50 @@ for path in "${required_paths[@]}"; do
   }
 done
 
+require_arm64() {
+  local artifact_path=$1
+  local architectures
+  architectures=$(/usr/bin/lipo -archs "${artifact_path}" 2>/dev/null) || {
+    print -u2 "Mach-O 실행 파일을 확인할 수 없음: ${artifact_path}"
+    exit 65
+  }
+  [[ "${architectures}" == arm64 ]] || {
+    print -u2 "Apple Silicon 전용 payload가 아님: ${artifact_path} (${architectures})"
+    exit 65
+  }
+}
+for artifact_path in \
+  "${payload}/usr/local/bin/runtinue" "${payload}/usr/local/bin/runtinue-hook" \
+  "${payload}/usr/local/bin/runtinue-activity" \
+  "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-helper" \
+  "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/bin/runtinue-supervisor" \
+  "${payload}/Applications/Runtinue.app/Contents/MacOS/runtinue-menubar"; do
+  require_arm64 "${artifact_path}"
+done
+# 추가된 라이브러리나 실행 파일도 아키텍처 검사에서 빠지지 않도록 전부 확인한다.
+for artifact_path in "${payload}"/**/*(.DN); do
+  if /usr/bin/file -b "${artifact_path}" | /usr/bin/grep -q '^Mach-O'; then
+    require_arm64 "${artifact_path}"
+  fi
+done
+
 app_info="${payload}/Applications/Runtinue.app/Contents/Info.plist"
+package_info="${payload:h}/PackageInfo"
+package_version=$(/usr/bin/sed -n 's/^<pkg-info[^>]* version="\([^"]*\)".*/\1/p' "${package_info}")
+app_version=$(/usr/bin/plutil -extract CFBundleShortVersionString raw "${app_info}")
+[[ -n "${package_version}" && "${app_version}" == "${package_version}" ]] || {
+  print -u2 "앱과 패키지 버전이 일치하지 않음"
+  exit 65
+}
+source_commit=$(/usr/bin/plutil -extract RuntinueSourceCommit raw "${app_info}" 2>/dev/null || true)
+source_dirty=$(/usr/bin/plutil -extract RuntinueSourceDirty raw "${app_info}" 2>/dev/null || true)
+if [[ -n "${source_commit}" || -n "${source_dirty}" || "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != YES ]]; then
+  [[ "${source_commit}" =~ '^[0-9a-f]{40}$' && ( "${source_dirty}" == true || "${source_dirty}" == false ) ]] || {
+    print -u2 "앱의 소스 commit 또는 작업 트리 상태가 올바르지 않음"
+    exit 65
+  }
+fi
+
 location_usage=$(
   /usr/bin/plutil -extract NSLocationUsageDescription raw "${app_info}"
 )
@@ -155,6 +199,10 @@ for script in "${package_scripts}/preinstall" "${package_scripts}/postinstall"; 
   /bin/zsh -n "${script}"
 done
 if [[ "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != "YES" ]]; then
+  [[ "${app_version}" == "$(/bin/zsh "${script_dir}/version.sh")" ]] || {
+    print -u2 "패키지 버전이 현재 VERSION 파일과 다름"
+    exit 65
+  }
   /usr/bin/cmp -s "${payload}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png" \
     "${project_root}/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png" || {
     print -u2 "패키지 메뉴바 아이콘이 검증된 소스와 다름"
@@ -178,4 +226,4 @@ if [[ "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != "YES" ]]; then
   }
 fi
 
-print "패키지 payload, caller requirement, 앱 권한 설명과 설치 스크립트 검증 통과"
+print "패키지 payload, arm64, 버전, 소스 식별자, caller requirement와 설치 스크립트 검증 통과"

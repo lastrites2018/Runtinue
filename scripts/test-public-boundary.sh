@@ -9,6 +9,7 @@ fixture="$runtinue_test_dir/fixture"
 mkdir -p "$fixture/scripts" "$fixture/.githooks" \
   "$fixture/Sources/RuntinueMenuBar/Resources" "$fixture/Packaging"
 cp "$project_root/.gitignore" "$fixture/.gitignore"
+cp "$project_root/VERSION" "$fixture/VERSION"
 cp "$script_dir/verify-public-tree.sh" "$fixture/scripts/verify-public-tree.sh"
 cp "$project_root/.githooks/pre-commit" "$fixture/.githooks/pre-commit"
 cp "$project_root/.githooks/pre-push" "$fixture/.githooks/pre-push"
@@ -23,7 +24,7 @@ git -C "$fixture" config user.name 'Repository Boundary Test'
 git -C "$fixture" config user.email 'boundary-test@example.invalid'
 git -C "$fixture" config commit.gpgsign false
 git -C "$fixture" config core.hooksPath .githooks
-git -C "$fixture" add .gitignore README.md Sources scripts .githooks Packaging
+git -C "$fixture" add .gitignore README.md VERSION Sources scripts .githooks Packaging
 
 passed=0
 expect_success() {

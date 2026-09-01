@@ -1,7 +1,7 @@
 import Foundation
 
 public enum RuntinueIPCContract {
-  public static let protocolVersion = 4
+  public static let protocolVersion = 5
   public static let maximumRequestBytes = 64 * 1_024
   public static let helperMachServiceName = "io.github.lastrites2018.runtinue.helper"
   public static let supervisorMachServiceName = "io.github.lastrites2018.runtinue.supervisor"
@@ -15,6 +15,14 @@ public enum RuntinueIPCContract {
     protocolVersion == self.protocolVersion
       && byteCount >= 0
       && byteCount <= maximumRequestBytes
+  }
+
+  public static func validatedDuration(seconds: Double, maximumSeconds: Double) -> Duration? {
+    guard seconds.isFinite, maximumSeconds.isFinite,
+      seconds > 0, seconds <= maximumSeconds, seconds <= 86_400
+    else { return nil }
+    let duration = Duration.seconds(seconds)
+    return duration > .zero ? duration : nil
   }
 
   public static func decodeRequest<T: Decodable>(
@@ -125,8 +133,8 @@ public struct HelperStatusWire: Codable, Equatable, Sendable {
   public let leaseID: UUID?
   public let ownerUID: UInt32?
   public let sleepOverride: WireSleepOverride
-  public let ttlDeadlineUptimeNanoseconds: UInt64?
-  public let hardDeadlineUptimeNanoseconds: UInt64?
+  public let ttlDeadlineContinuousNanoseconds: UInt64?
+  public let hardDeadlineContinuousNanoseconds: UInt64?
   public let detail: String?
 
   public init(
@@ -134,16 +142,16 @@ public struct HelperStatusWire: Codable, Equatable, Sendable {
     leaseID: UUID?,
     ownerUID: UInt32?,
     sleepOverride: WireSleepOverride,
-    ttlDeadlineUptimeNanoseconds: UInt64?,
-    hardDeadlineUptimeNanoseconds: UInt64?,
+    ttlDeadlineContinuousNanoseconds: UInt64?,
+    hardDeadlineContinuousNanoseconds: UInt64?,
     detail: String?
   ) {
     self.phase = phase
     self.leaseID = leaseID
     self.ownerUID = ownerUID
     self.sleepOverride = sleepOverride
-    self.ttlDeadlineUptimeNanoseconds = ttlDeadlineUptimeNanoseconds
-    self.hardDeadlineUptimeNanoseconds = hardDeadlineUptimeNanoseconds
+    self.ttlDeadlineContinuousNanoseconds = ttlDeadlineContinuousNanoseconds
+    self.hardDeadlineContinuousNanoseconds = hardDeadlineContinuousNanoseconds
     self.detail = detail
   }
 }

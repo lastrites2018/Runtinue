@@ -25,7 +25,7 @@ final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate,
     _ listener: NSXPCListener,
     shouldAcceptNewConnection connection: NSXPCConnection
   ) -> Bool {
-    guard authenticator.accepts(connection), reserveConnectionSlot() else {
+    guard authenticator.configureAuthentication(on: connection), reserveConnectionSlot() else {
       return false
     }
 

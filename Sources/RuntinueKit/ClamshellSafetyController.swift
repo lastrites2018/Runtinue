@@ -10,7 +10,8 @@ public struct SessionRequest: Sendable {
   public enum Mode: Sendable {
     case trip(
       expectedHotspotSSID: String,
-      handoffTimeout: Duration = .seconds(15 * 60)
+      handoffTimeout: Duration = .seconds(15 * 60),
+      alreadyConnected: Bool = false
     )
     case usbTetheredTrip(
       handoffTimeout: Duration = .seconds(15 * 60)
@@ -94,13 +95,14 @@ public actor ClamshellSafetyController {
 
     let status: SupervisorStatusWire
     switch request.mode {
-    case .trip(let expectedHotspotSSID, let handoffTimeout):
+    case .trip(let expectedHotspotSSID, let handoffTimeout, let alreadyConnected):
       status = try await client.startTrip(
         StartTripWireRequest(
           expectedHotspotSSID: expectedHotspotSSID,
           hotspotHandoffTimeoutSeconds: handoffTimeout.secondsValue,
           hardCapSeconds: request.hardCap.secondsValue,
-          safetyProfile: wireProfile(request.profile)
+          safetyProfile: wireProfile(request.profile),
+          allowAlreadyConnected: alreadyConnected
         )
       )
     case .usbTetheredTrip(let handoffTimeout):

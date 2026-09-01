@@ -9,7 +9,8 @@ final class MenuBarFormViewsTests: XCTestCase {
   func testRememberedHotspotIsKeptWhileConnectedToAnotherNetwork() throws {
     _ = NSApplication.shared
     let form = TripConfigurationView(
-      rememberedHotspotSSID: "Fixture Phone", currentWiFiSSID: "Office"
+      rememberedHotspotSSID: "Fixture Phone", currentWiFiSSID: "Office",
+      confirmedHotspotSSID: "Fixture Phone"
     )
     let current: NSTextField = try control("runtinue.trip.currentWiFi", in: form)
     XCTAssertEqual(current.stringValue, "Office")
@@ -26,7 +27,28 @@ final class MenuBarFormViewsTests: XCTestCase {
 
     _ = useCurrent.sendAction(useCurrent.action, to: useCurrent.target)
 
+    XCTAssertEqual(form.input.hotspotSSID, "Fixture Phone")
+    XCTAssertThrowsError(try form.input.makeRequest())
+    let confirm: NSButton = try control("runtinue.trip.confirmHotspot", in: form)
+    confirm.state = .on
+    _ = confirm.sendAction(confirm.action, to: confirm.target)
     XCTAssertEqual(try form.input.makeRequest().expectedHotspotSSID, "Fixture Phone")
+    XCTAssertTrue(try form.input.makeRequest().allowAlreadyConnected)
+  }
+
+  func testChangingTheHotspotNameRequiresASeparateConfirmation() throws {
+    _ = NSApplication.shared
+    let form = TripConfigurationView(
+      rememberedHotspotSSID: "Fixture Phone", currentWiFiSSID: "Office",
+      confirmedHotspotSSID: "Fixture Phone"
+    )
+    XCTAssertTrue(try form.input.makeRequest().allowAlreadyConnected)
+    let hotspot: NSTextField = try control("runtinue.trip.hotspot", in: form)
+    hotspot.stringValue = "Office"
+    XCTAssertThrowsError(try form.input.makeRequest())
+    form.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: hotspot))
+    let confirm: NSButton = try control("runtinue.trip.confirmHotspot", in: form)
+    XCTAssertEqual(confirm.state, .off)
   }
 
   func testUnavailableWiFiNameDisablesTheShortcut() throws {

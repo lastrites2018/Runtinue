@@ -703,7 +703,7 @@ private final class SupervisorManualClock: @unchecked Sendable, MonotonicTimeSou
   func now() -> MonotonicInstant {
     lock.lock()
     defer { lock.unlock() }
-    return MonotonicInstant(uptimeNanoseconds: nanoseconds)
+    return MonotonicInstant(continuousNanoseconds: nanoseconds)
   }
 
   func advance(seconds: UInt64) {

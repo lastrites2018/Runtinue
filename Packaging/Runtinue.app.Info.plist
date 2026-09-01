@@ -19,9 +19,13 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2.1</string>
+  <string>VERSION_FROM_BUILD</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <key>RuntinueSourceCommit</key>
+  <string>COMMIT_FROM_BUILD</string>
+  <key>RuntinueSourceDirty</key>
+  <true/>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>

@@ -108,7 +108,7 @@ struct RuntinueCLI {
   }
 
   private static func inspect() async {
-    let clock = SystemUptimeClock()
+    let clock = SystemContinuousClock()
     let network = await MacNetworkProbe(clock: clock).snapshot(confirmInternet: true)
     let device = MacDeviceProbe(clock: clock).snapshot()
     let verdict = DeviceSafetyPolicy().evaluate(device, at: clock.now())
@@ -154,7 +154,7 @@ struct RuntinueCLI {
   }
 
   private static func diagnose() async {
-    let clock = SystemUptimeClock()
+    let clock = SystemContinuousClock()
     async let network = MacNetworkProbe(clock: clock).snapshot(confirmInternet: true)
     let device = MacDeviceProbe(clock: clock).snapshot()
     let sleepOverride = MacSleepOverrideProbe().read()
@@ -280,7 +280,8 @@ struct RuntinueCLI {
       networkTargetKind: options.networkTargetKind,
       expectedHotspotSSID: options.hotspotSSID,
       hotspotHandoffTimeoutSeconds: options.handoffTimeoutSeconds,
-      hardCapSeconds: options.hardCapSeconds
+      hardCapSeconds: options.hardCapSeconds,
+      allowAlreadyConnected: options.alreadyConnected
     )
     do {
       let status = try await SupervisorXPCClient().startTrip(request)
@@ -439,7 +440,7 @@ struct RuntinueCLI {
   }
 
   private static func watchHandoff(options: WatchOptions) async throws {
-    let clock = SystemUptimeClock()
+    let clock = SystemContinuousClock()
     let networkProbe = MacNetworkProbe(clock: clock)
     let deviceProbe = MacDeviceProbe(clock: clock)
     let origin = await networkProbe.snapshot()
@@ -535,8 +536,8 @@ struct RuntinueCLI {
     print(
       """
       사용법:
-        runtinue trip start --for <시간> (--hotspot <SSID> | --usb-tether) [--handoff-timeout <시간>]
-        runtinue start --for <시간> (--hotspot <SSID> | --usb-tether) [--handoff-timeout <시간>]
+        runtinue trip start --for <시간> (--hotspot <SSID> | --usb-tether) [--already-connected] [--handoff-timeout <시간>]
+        runtinue start --for <시간> (--hotspot <SSID> | --usb-tether) [--already-connected] [--handoff-timeout <시간>]
         runtinue status [--json]
         runtinue stop
         runtinue history [--limit <개수>]
@@ -552,7 +553,7 @@ struct RuntinueCLI {
 
       시간 예시: 90m, 2h, 5400s
       trip start는 지정한 핫스팟 연결을 확인한 뒤 유한한 closed-lid 보호 lease를 요청합니다.
-      Wi-Fi 핫스팟에 이미 연결된 상태에서도 시작할 수 있습니다.
+      이미 연결한 휴대전화 핫스팟에서 시작할 때는 --already-connected로 확인합니다.
       adaptive enable은 서명된 hook의 활동 신호가 있을 때만 lease를 획득합니다.
       desk enable은 기본적으로 덮개가 열린 동안 process-owned assertion을 사용합니다.
       --closed-lid를 지정한 경우에만 privileged lease를 사용합니다.
@@ -698,10 +699,12 @@ private struct TripOptions {
   let hotspotSSID: String?
   let hardCapSeconds: Double
   let handoffTimeoutSeconds: Double
+  let alreadyConnected: Bool
 
   init(arguments: [String]) throws {
     var hotspotSSID: String?
     var useUSBTethering = false
+    var alreadyConnected = false
     var hardCapSeconds: Double?
     var handoffTimeoutSeconds = 15 * 60.0
     var index = 0
@@ -711,6 +714,10 @@ private struct TripOptions {
       index += 1
       if option == "--usb-tether" {
         useUSBTethering = true
+        continue
+      }
+      if option == "--already-connected" {
+        alreadyConnected = true
         continue
       }
       guard index < arguments.count else {
@@ -732,6 +739,9 @@ private struct TripOptions {
 
     if useUSBTethering, hotspotSSID != nil {
       throw CLIError.invalidValue("--hotspot과 --usb-tether는 함께 사용할 수 없음")
+    }
+    if useUSBTethering, alreadyConnected {
+      throw CLIError.invalidValue("--already-connected는 Wi-Fi 핫스팟에만 사용합니다")
     }
     if let hotspotSSID, !hotspotSSID.isEmpty,
       hotspotSSID.utf8.count <= CommuteTripRequest.maximumHotspotSSIDBytes
@@ -755,6 +765,7 @@ private struct TripOptions {
     }
     self.hardCapSeconds = hardCapSeconds
     self.handoffTimeoutSeconds = handoffTimeoutSeconds
+    self.alreadyConnected = alreadyConnected
   }
 
   private static func parseDuration(_ value: String, option: String) throws -> Double {

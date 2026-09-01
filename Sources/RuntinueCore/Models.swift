@@ -32,7 +32,8 @@ public enum InternetReachability: String, Equatable, Sendable {
 }
 
 public enum PowerConnection: String, Equatable, Sendable {
-  case ac
+  case acCharging
+  case acNotCharging
   case battery
   case unknown
 }
@@ -74,6 +75,7 @@ public struct DeviceSafetySnapshot: Equatable, Sendable {
   public let lidState: LidState
   public let externalDisplayState: ExternalDisplayState
   public let lowPowerModeEnabled: Bool
+  public let lidSignalsDisagree: Bool
   public let capturedAt: MonotonicInstant
 
   public init(
@@ -83,6 +85,7 @@ public struct DeviceSafetySnapshot: Equatable, Sendable {
     lidState: LidState,
     externalDisplayState: ExternalDisplayState,
     lowPowerModeEnabled: Bool,
+    lidSignalsDisagree: Bool = false,
     capturedAt: MonotonicInstant
   ) {
     self.batteryPercent = batteryPercent
@@ -91,6 +94,7 @@ public struct DeviceSafetySnapshot: Equatable, Sendable {
     self.lidState = lidState
     self.externalDisplayState = externalDisplayState
     self.lowPowerModeEnabled = lowPowerModeEnabled
+    self.lidSignalsDisagree = lidSignalsDisagree
     self.capturedAt = capturedAt
   }
 }

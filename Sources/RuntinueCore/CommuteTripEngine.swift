@@ -9,12 +9,14 @@ public struct CommuteTripRequest: Equatable, Sendable {
   public let hotspotHandoffTimeout: Duration
   public let hardCap: Duration
   public let safetyPolicy: DeviceSafetyPolicy
+  public let allowAlreadyConnected: Bool
 
   public init(
     expectedHotspotSSID: String,
     hotspotHandoffTimeout: Duration = .seconds(15 * 60),
     hardCap: Duration = Self.defaultHardCap,
-    safetyPolicy: DeviceSafetyPolicy = DeviceSafetyPolicy()
+    safetyPolicy: DeviceSafetyPolicy = DeviceSafetyPolicy(),
+    allowAlreadyConnected: Bool = false
   ) {
     self.networkTarget = .wifiHotspot(
       ssid: expectedHotspotSSID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -22,13 +24,15 @@ public struct CommuteTripRequest: Equatable, Sendable {
     self.hotspotHandoffTimeout = hotspotHandoffTimeout
     self.hardCap = hardCap
     self.safetyPolicy = safetyPolicy
+    self.allowAlreadyConnected = allowAlreadyConnected
   }
 
   public init(
     networkTarget: CommuteNetworkTarget,
     hotspotHandoffTimeout: Duration = .seconds(15 * 60),
     hardCap: Duration = Self.defaultHardCap,
-    safetyPolicy: DeviceSafetyPolicy = DeviceSafetyPolicy()
+    safetyPolicy: DeviceSafetyPolicy = DeviceSafetyPolicy(),
+    allowAlreadyConnected: Bool = false
   ) {
     switch networkTarget {
     case .wifiHotspot(let ssid):
@@ -41,6 +45,7 @@ public struct CommuteTripRequest: Equatable, Sendable {
     self.hotspotHandoffTimeout = hotspotHandoffTimeout
     self.hardCap = hardCap
     self.safetyPolicy = safetyPolicy
+    self.allowAlreadyConnected = networkTarget != .usbTethering && allowAlreadyConnected
   }
 
   func validate() throws {
@@ -217,8 +222,8 @@ public struct CommuteTripEngine: Sendable {
 
     let hotspotPolicy = HotspotTransitionPolicy(
       target: currentSession.request.networkTarget,
-      // Wi-Fi는 현재 연결의 준비 상태로 판단한다. USB의 인터페이스 전환 조건은 유지한다.
-      requireNetworkIdentityChange: false
+      // 확인된 Wi-Fi만 현재 연결에서 시작할 수 있다. USB는 항상 인터페이스 전환을 요구한다.
+      requireNetworkIdentityChange: !currentSession.request.allowAlreadyConnected
     )
     switch hotspotPolicy.evaluate(
       origin: currentSession.originNetwork,

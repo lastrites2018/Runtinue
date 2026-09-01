@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 project_root=${script_dir:h}
-version=${VERSION:?VERSION을 지정해야 합니다}
+version=$(/bin/zsh "${script_dir}/version.sh")
 url=${RELEASE_URL:?RELEASE_URL을 지정해야 합니다}
 homepage=${HOMEPAGE_URL:?HOMEPAGE_URL을 지정해야 합니다}
 pkg=${PKG_PATH:?PKG_PATH를 지정해야 합니다}

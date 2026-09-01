@@ -1,26 +1,41 @@
 import AppKit
 
 @MainActor
-final class TripConfigurationView: NSView {
+final class TripConfigurationView: NSView, NSTextFieldDelegate {
   private let targetPopUp = NSPopUpButton()
   private let hotspotLabel = NSTextField(labelWithString: "핫스팟 이름")
   private let hotspotField = NSTextField(string: "")
   private let useCurrentWiFiButton = NSButton(title: "사용", target: nil, action: nil)
   private let currentWiFiSSID: String?
+  private let hotspotConfirmation = NSButton(
+    checkboxWithTitle: "휴대전화 핫스팟이 맞습니다", target: nil, action: nil
+  )
+  private var confirmedSSID: String?
   private let protectionField = NSTextField(string: "90")
   private let handoffTimeoutField = NSTextField(string: "15")
 
-  init(rememberedHotspotSSID: String? = nil, currentWiFiSSID: String? = nil) {
+  init(
+    rememberedHotspotSSID: String? = nil, currentWiFiSSID: String? = nil,
+    confirmedHotspotSSID: String? = nil
+  ) {
     self.currentWiFiSSID = currentWiFiSSID.flatMap {
       try? TripFormInput.validatedHotspotSSID($0)
     }
-    super.init(frame: NSRect(x: 0, y: 0, width: 390, height: 235))
+    super.init(frame: NSRect(x: 0, y: 0, width: 390, height: 265))
 
     targetPopUp.addItems(withTitles: ["Wi-Fi 핫스팟", "USB 테더링"])
     targetPopUp.target = self
     targetPopUp.action = #selector(targetChanged)
     hotspotField.placeholderString = "예: iPhone"
     hotspotField.stringValue = rememberedHotspotSSID ?? ""
+    hotspotField.delegate = self
+    hotspotConfirmation.target = self
+    hotspotConfirmation.action = #selector(confirmHotspot)
+    hotspotConfirmation.setAccessibilityIdentifier("runtinue.trip.confirmHotspot")
+    if let rememberedHotspotSSID, rememberedHotspotSSID == confirmedHotspotSSID {
+      confirmedSSID = rememberedHotspotSSID
+      hotspotConfirmation.state = .on
+    }
     targetPopUp.setAccessibilityIdentifier("runtinue.trip.target")
     hotspotField.setAccessibilityIdentifier("runtinue.trip.hotspot")
     protectionField.setAccessibilityIdentifier("runtinue.trip.duration")
@@ -48,10 +63,11 @@ final class TripConfigurationView: NSView {
         makeFormRow(label: "연결 방식", control: targetPopUp),
         makeFormRow(label: hotspotLabel, control: hotspotField),
         makeFormRow(label: "현재 Wi-Fi", control: currentWiFiRow),
+        makeFormRow(label: "대상 확인", control: hotspotConfirmation),
         makeFormRow(label: "보호 시간(분)", control: protectionField),
         makeFormRow(label: "연결 대기(분)", control: handoffTimeoutField),
       ],
-      note: "핫스팟에 연결한 뒤 시작해도 됩니다. 입력한 이름은 다음에도 기억합니다. "
+      note: "처음에는 휴대전화 핫스팟임을 확인하세요. 보호가 확인된 대상은 기억합니다. "
         + "USB 테더링은 연결 전환을 확인합니다."
     )
     addPinnedSubview(stack)
@@ -68,7 +84,9 @@ final class TripConfigurationView: NSView {
       target: targetPopUp.indexOfSelectedItem == 1 ? .usbTethering : .wifiHotspot,
       hotspotSSID: hotspotField.stringValue,
       protectionMinutes: protectionField.stringValue,
-      handoffTimeoutMinutes: handoffTimeoutField.stringValue
+      handoffTimeoutMinutes: handoffTimeoutField.stringValue,
+      hotspotConfirmed: hotspotConfirmation.state == .on
+        && confirmedSSID == (try? TripFormInput.validatedHotspotSSID(hotspotField.stringValue))
     )
   }
 
@@ -81,6 +99,23 @@ final class TripConfigurationView: NSView {
       return
     }
     hotspotField.stringValue = currentWiFiSSID
+    clearChangedConfirmation()
+  }
+
+  @objc private func confirmHotspot() {
+    confirmedSSID = hotspotConfirmation.state == .on
+      ? try? TripFormInput.validatedHotspotSSID(hotspotField.stringValue) : nil
+  }
+
+  func controlTextDidChange(_ notification: Notification) {
+    clearChangedConfirmation()
+  }
+
+  private func clearChangedConfirmation() {
+    if confirmedSSID != (try? TripFormInput.validatedHotspotSSID(hotspotField.stringValue)) {
+      confirmedSSID = nil
+      hotspotConfirmation.state = .off
+    }
   }
 
   @objc private func targetChanged() {
@@ -88,6 +123,7 @@ final class TripConfigurationView: NSView {
     hotspotLabel.textColor = requiresSSID ? .labelColor : .secondaryLabelColor
     hotspotField.isEnabled = requiresSSID
     useCurrentWiFiButton.isEnabled = requiresSSID && currentWiFiSSID != nil
+    hotspotConfirmation.isEnabled = requiresSSID
   }
 }
 

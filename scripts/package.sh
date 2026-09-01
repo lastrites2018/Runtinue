@@ -6,12 +6,8 @@ project_root=${script_dir:h}
 release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 distribution_root="${release_root}/distribution"
 payload_root="${release_root}/payload"
-version=${VERSION:-0.2.1}
+version=$(/bin/zsh "${script_dir}/version.sh")
 development_package=${RUNTINUE_DEVELOPMENT_PACKAGE:-NO}
-[[ "${version}" =~ '^[0-9]+([.][0-9]+){1,3}$' ]] || {
-  print -u2 "VERSION 형식이 올바르지 않음"
-  exit 64
-}
 if [[ "${development_package}" == "YES" ]]; then
   export DEVELOPER_ID_APPLICATION=${DEVELOPER_ID_APPLICATION:--}
   installer_identity=""
@@ -54,7 +50,7 @@ for existing_output in "${component_pkg}" "${final_pkg}"; do
   fi
 done
 
-VERSION="${version}" "${script_dir}/build.sh"
+"${script_dir}/build.sh"
 
 rm -rf -- "${payload_root}"
 mkdir -p \

@@ -5,7 +5,7 @@ public struct MacEnvironmentSampler: SupervisorEnvironmentSampling, Sendable {
   private let networkProbe: MacNetworkProbe
   private let deviceProbe: MacDeviceProbe
 
-  public init(clock: any MonotonicTimeSource = SystemUptimeClock()) {
+  public init(clock: any MonotonicTimeSource = SystemContinuousClock()) {
     self.networkProbe = MacNetworkProbe(clock: clock)
     self.deviceProbe = MacDeviceProbe(clock: clock)
   }

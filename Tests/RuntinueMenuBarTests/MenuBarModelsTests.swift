@@ -37,13 +37,28 @@ final class MenuBarModelsTests: XCTestCase {
       target: .wifiHotspot,
       hotspotSSID: "  iPhone  ",
       protectionMinutes: "90",
-      handoffTimeoutMinutes: "15"
+      handoffTimeoutMinutes: "15",
+      hotspotConfirmed: true
     ).makeRequest()
 
     XCTAssertEqual(request.networkTargetKind, .wifiHotspot)
     XCTAssertEqual(request.expectedHotspotSSID, "iPhone")
     XCTAssertEqual(request.hardCapSeconds, 5_400)
     XCTAssertEqual(request.hotspotHandoffTimeoutSeconds, 900)
+    XCTAssertTrue(request.allowAlreadyConnected)
+  }
+
+  func testWiFiTripRequiresFirstUseHotspotConfirmation() {
+    XCTAssertThrowsError(
+      try TripFormInput(
+        target: .wifiHotspot,
+        hotspotSSID: "Fixture Phone",
+        protectionMinutes: "60",
+        handoffTimeoutMinutes: "15"
+      ).makeRequest()
+    ) { error in
+      XCTAssertEqual(error as? MenuBarConfigurationError, .hotspotConfirmationRequired)
+    }
   }
 
   func testUSBTripDoesNotRequireOrForwardSSID() throws {
@@ -56,6 +71,7 @@ final class MenuBarModelsTests: XCTestCase {
 
     XCTAssertEqual(request.networkTargetKind, .usbTethering)
     XCTAssertNil(request.expectedHotspotSSID)
+    XCTAssertFalse(request.allowAlreadyConnected)
   }
 
   func testWiFiTripRejectsMissingHotspotName() {

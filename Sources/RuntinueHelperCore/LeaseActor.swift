@@ -29,7 +29,7 @@ public actor LeaseActor {
   public init(
     powerBackend: any SleepPowerBackend,
     store: any LeaseStateStore,
-    monotonicClock: any MonotonicTimeSource = SystemUptimeClock(),
+    monotonicClock: any MonotonicTimeSource = SystemContinuousClock(),
     wallClock: any WallTimeSource = SystemWallClock()
   ) {
     self.powerBackend = powerBackend
@@ -177,6 +177,7 @@ public actor LeaseActor {
         primaryFailure: "failed to enable sleep override: \(error)"
       )
     }
+    if let expired = await releaseExpiredLeaseIfNeeded() { return expired }
 
     persisted.phase = .active
     runtimeLease?.persisted = persisted
@@ -187,6 +188,7 @@ public actor LeaseActor {
         primaryFailure: "failed to persist active phase: \(error)"
       )
     }
+    if let expired = await releaseExpiredLeaseIfNeeded() { return expired }
 
     return .success(await currentStatus())
   }
@@ -216,10 +218,7 @@ public actor LeaseActor {
     operationInProgress = true
     defer { operationInProgress = false }
 
-    let now = monotonicClock.now()
-    if now >= runtime.hardDeadline {
-      return await releaseCurrent(reason: .hardDeadlineReached)
-    }
+    if let expired = await releaseExpiredLeaseIfNeeded() { return expired }
 
     do {
       try await powerBackend.writeAndVerify(.disabled)
@@ -231,6 +230,9 @@ public actor LeaseActor {
       return await recoverPersistedLease(reason: .safetyTrip).asMutationResult
     }
 
+    // A power write can span sleep. Check the old TTL before extending it.
+    if let expired = await releaseExpiredLeaseIfNeeded() { return expired }
+    let now = monotonicClock.now()
     let proposedTTLDeadline = now.adding(ttl)
     runtime.ttlDeadline = min(proposedTTLDeadline, runtime.hardDeadline)
     let wallNow = wallClock.now()
@@ -250,6 +252,7 @@ public actor LeaseActor {
       await persistBestEffort(runtime.persisted)
       return await recoverPersistedLease(reason: .safetyTrip).asMutationResult
     }
+    if let expired = await releaseExpiredLeaseIfNeeded() { return expired }
 
     return .success(await currentStatus())
   }
@@ -306,6 +309,27 @@ public actor LeaseActor {
       if now >= runtime.ttlDeadline {
         return await releaseCurrent(reason: .supervisorHeartbeatExpired).status
       }
+      switch await powerBackend.readSleepOverride() {
+      case .disabled:
+        break
+      case .normal:
+        do {
+          // Reassert once without extending either deadline.
+          try await powerBackend.writeAndVerify(.disabled)
+        } catch {
+          return await recoverPersistedLease(reason: .safetyTrip)
+        }
+      case .unavailable:
+        return await recoverPersistedLease(reason: .safetyTrip)
+      }
+      // A slow write or system suspend must not outlive the original deadline.
+      let verifiedAt = monotonicClock.now()
+      if verifiedAt >= runtime.hardDeadline {
+        return await releaseCurrent(reason: .hardDeadlineReached).status
+      }
+      if verifiedAt >= runtime.ttlDeadline {
+        return await releaseCurrent(reason: .supervisorHeartbeatExpired).status
+      }
     }
     return await currentStatus()
   }
@@ -350,6 +374,18 @@ public actor LeaseActor {
       return await recoverPersistedLease(reason: .safetyTrip)
     }
     return await currentStatus()
+  }
+
+  private func releaseExpiredLeaseIfNeeded() async -> HelperLeaseMutationResult? {
+    guard let runtime = runtimeLease else { return nil }
+    let now = monotonicClock.now()
+    if now >= runtime.hardDeadline {
+      return await releaseCurrent(reason: .hardDeadlineReached)
+    }
+    if now >= runtime.ttlDeadline {
+      return await releaseCurrent(reason: .supervisorHeartbeatExpired)
+    }
+    return nil
   }
 
   private func releaseCurrent(reason: HelperReleaseReason) async -> HelperLeaseMutationResult {

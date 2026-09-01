@@ -37,3 +37,33 @@ jobs:
           persist-credentials: false
       - name: 전원 변경 없는 테스트
         run: ./scripts/test.sh
+
+  swift-release-tests:
+    name: swift-release-tests
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: 최적화 빌드의 전원 변경 없는 테스트
+        run: swift test -c release --disable-sandbox
+
+  development-package:
+    name: development-package
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: arm64 개발 패키지와 실제 payload 검증
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          mkdir -p .release
+          runtinue_ci_root=$(mktemp -d "$PWD/.release/ci-package.XXXXXX")
+          RUNTINUE_RELEASE_ROOT="$runtinue_ci_root" ./scripts/package-development.sh
+          runtinue_version=$(./scripts/version.sh)
+          runtinue_pkg="$runtinue_ci_root/Runtinue-$runtinue_version-development.pkg"
+          RUNTINUE_RELEASE_TEST_PKG="$runtinue_pkg" ./scripts/test-release-tools.sh

@@ -5,11 +5,11 @@ script_dir=${0:A:h}
 project_root=${script_dir:h}
 release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 release_root=${release_root:A}
-version=${VERSION:-0.2.1}
+version=$(/bin/zsh "${script_dir}/version.sh" --release)
 notary_profile=${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE을 지정해야 합니다}
 pkg="${release_root}/Runtinue-${version}.pkg"
 
-VERSION="${version}" "${script_dir}/package.sh"
+"${script_dir}/package.sh"
 /usr/bin/xcrun notarytool submit "${pkg}" --keychain-profile "${notary_profile}" --wait
 /usr/bin/xcrun stapler staple "${pkg}"
 /usr/bin/xcrun stapler validate "${pkg}"
@@ -19,10 +19,6 @@ VERSION="${version}" "${script_dir}/package.sh"
 manifest="${pkg}.manifest.json"
 RUNTINUE_NOTARIZATION_VERIFIED=YES \
   "${script_dir}/release-manifest.sh" create "${pkg}" "${manifest}" release
-RUNTINUE_NOTARIZATION_VERIFIED=YES \
-  "${script_dir}/release-manifest.sh" publish \
-    "${pkg}" "${manifest}" "${project_root}/.release/Runtinue-latest.json"
-
 checksum_file="${pkg}.sha256"
 checksum=$(/usr/bin/shasum -a 256 -- "${pkg}" | /usr/bin/awk '{print $1}')
 if [[ -e "${checksum_file}" || -L "${checksum_file}" ]]; then
@@ -37,4 +33,7 @@ else
   /bin/mv -- "${checksum_tmp}" "${checksum_file}"
 fi
 
-print "공증과 staple이 완료된 배포물: ${pkg}"
+print "공증과 staple이 완료된 후보 패키지: ${pkg}"
+RUNTINUE_NOTARIZATION_VERIFIED=YES \
+  "${script_dir}/release-manifest.sh" publish \
+    "${pkg}" "${manifest}" "${project_root}/.release/Runtinue-latest.json"
