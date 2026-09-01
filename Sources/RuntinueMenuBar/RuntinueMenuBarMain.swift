@@ -27,8 +27,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private let statusItem = NSStatusBar.system.statusItem(
     withLength: NSStatusItem.variableLength
   )
-  private let summaryItem = NSMenuItem(title: "상태 확인 중", action: nil, keyEquivalent: "")
-  private let detailItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+  private let statusHeaderItem = NSMenuItem()
+  private let statusHeaderView = ProtectionStatusHeaderView()
   private let wifiPermissionItem = NSMenuItem(
     title: "Wi-Fi 감지 권한 확인 중",
     action: nil,
@@ -66,6 +66,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private let refreshController = MenuBarRefreshController()
   private let commandController = MenuBarCommandController()
   private var informationTask: Task<Void, Never>?
+  // 불확실 상태에서 아이콘을 격상하는 표현 전용 기록이다. 동작 허용 판단에는 사용하지 않는다.
+  private var lastKnownStatus: SupervisorStatusWire?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     configureMenu()
@@ -88,14 +90,13 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func configureMenu() {
-    statusItem.button?.image = MenuBarIcon.load()
+    statusItem.button?.image = MenuBarStatusVisuals.image(for: .continuationMark)
     statusItem.button?.imagePosition = .imageLeading
     statusItem.button?.imageScaling = .scaleProportionallyDown
     statusItem.button?.setAccessibilityIdentifier("runtinue.status")
     statusItem.button?.setAccessibilityLabel("Runtinue")
 
-    summaryItem.isEnabled = false
-    detailItem.isEnabled = false
+    statusHeaderItem.view = statusHeaderView
     wifiPermissionItem.target = self
     wifiPermissionItem.action = #selector(requestWiFiPermission)
     startTripItem.target = self
@@ -132,12 +133,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
 
     let menu = NSMenu()
     menu.autoenablesItems = false
-    let nameItem = NSMenuItem(title: "Runtinue", action: nil, keyEquivalent: "")
-    nameItem.isEnabled = false
-    menu.addItem(nameItem)
+    menu.addItem(statusHeaderItem)
     menu.addItem(.separator())
-    menu.addItem(summaryItem)
-    menu.addItem(detailItem)
     menu.addItem(wifiPermissionItem)
     menu.addItem(.separator())
     menu.addItem(startTripItem)
@@ -210,23 +207,42 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
         status, network: wifiAuthorization.isAuthorized ? networkProbe.currentConnection() : nil
       )
     }
+    let sleepOverrideUnavailable = isSleepOverrideUnavailable(status: status)
+    let iconStyle: MenuBarIconStyle = MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+      currentStatus: status,
+      lastKnownStatus: lastKnownStatus,
+      sleepOverrideUnavailable: sleepOverrideUnavailable
+    ) ? .criticalWarning : .continuationMark
     let presentation = MenuBarPresentation(
       status: status,
-      isCommandInFlight: commandController.isCommandInFlight
+      isCommandInFlight: commandController.isCommandInFlight,
+      iconStyle: iconStyle
     )
+    if let status {
+      lastKnownStatus = status
+    }
     if let button = statusItem.button {
-      button.title = button.image == nil ? presentation.buttonTitle : presentation.statusIndicator
+      button.image = MenuBarStatusVisuals.image(for: presentation.iconStyle)
+      let title = button.image == nil ? presentation.buttonTitle : presentation.statusIndicator
+      button.attributedTitle = MenuBarStatusTypography.attributedTitle(title)
       button.toolTip = "Runtinue: \(presentation.summary)"
         + (presentation.detail.isEmpty ? "" : "\n\(presentation.detail)")
       button.setAccessibilityValue(presentation.summary)
     }
-    summaryItem.title = presentation.summary
-    detailItem.title = presentation.detail
-    if let issues = status?.observation?.issues, !issues.isEmpty {
-      detailItem.title += (detailItem.title.isEmpty ? "" : " | ") + "관찰 기록 경고: 진단 정보를 확인하세요."
-    }
-    detailItem.isHidden = detailItem.title.isEmpty
+    statusHeaderView.update(presentation)
     updateCommandAvailability(status: status)
+  }
+
+  private func isSleepOverrideUnavailable(status: SupervisorStatusWire?) -> Bool {
+    let shouldProbe = status == nil
+      || status?.verdict == .unknown
+      || status?.verdict == .recoveryPending
+      || status?.phase == .recoveryPending
+    guard shouldProbe else { return false }
+    if case .unavailable = MacSleepOverrideProbe().read() {
+      return true
+    }
+    return false
   }
 
   private func updateCommandAvailability(status: SupervisorStatusWire?) {

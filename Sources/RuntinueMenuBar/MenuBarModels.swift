@@ -154,57 +154,189 @@ struct MenuBarActionAvailability: Equatable, Sendable {
   }
 }
 
+enum MenuBarIconStyle: Equatable, Sendable {
+  case continuationMark
+  case criticalWarning
+}
+
+enum MenuBarTone: Equatable, Sendable {
+  case neutral
+  case progress
+  case verified
+  case attention
+  case stopped
+  case unknown
+}
+
+enum FlowlineNodeState: String, Equatable, Sendable {
+  case pending
+  case current
+  case passed
+  case failed
+  case unknown
+  case verified
+}
+
+struct FlowlineStep: Equatable, Sendable {
+  let label: String
+  let state: FlowlineNodeState
+}
+
+struct FlowlinePresentation: Equatable, Sendable {
+  let steps: [FlowlineStep]
+
+  static func trip(status: SupervisorStatusWire) -> FlowlinePresentation? {
+    guard status.mode == .trip else { return nil }
+
+    let states: [FlowlineNodeState]
+    switch status.verdict {
+    case .waitingForHotspot:
+      states = [.current, .pending, .pending, .pending]
+    case .acquiring:
+      states = [.passed, .passed, .passed, .current]
+    case .protected:
+      states = [.passed, .passed, .passed, status.closedLidAllowed ? .verified : .passed]
+    case .releasing, .recoveryPending:
+      return FlowlinePresentation(
+        steps: [
+          FlowlineStep(label: "수면 보호", state: .passed),
+          FlowlineStep(label: "정상 수면", state: .current),
+        ]
+      )
+    case .unsafe:
+      states = [.passed, .passed, .passed, .failed]
+    case .unknown:
+      states = [.unknown, .pending, .pending, .unknown]
+    case .inactive:
+      return nil
+    }
+
+    return FlowlinePresentation(
+      steps: zip(["네트워크", "인터넷", "기기", "보호"], states).map {
+        FlowlineStep(label: $0.0, state: $0.1)
+      }
+    )
+  }
+}
+
+enum MenuBarCriticalWarningPolicy {
+  static func shouldReplaceContinuationMark(
+    currentStatus: SupervisorStatusWire?,
+    lastKnownStatus: SupervisorStatusWire?,
+    sleepOverrideUnavailable: Bool
+  ) -> Bool {
+    guard sleepOverrideUnavailable else { return false }
+    guard let responsibility = currentStatus ?? lastKnownStatus else { return false }
+    guard responsibility.sessionID != nil || responsibility.mode != .none else { return false }
+
+    let activeOrRecovering =
+      [.active, .releasingLease, .recoveryPending].contains(responsibility.phase)
+      || [.protected, .releasing, .recoveryPending, .unknown].contains(responsibility.verdict)
+    let liveStateUnconfirmed =
+      currentStatus == nil
+      || currentStatus?.verdict == .unknown
+      || currentStatus?.verdict == .recoveryPending
+    return activeOrRecovering && liveStateUnconfirmed
+  }
+}
+
 struct MenuBarPresentation: Equatable, Sendable {
   let statusIndicator: String
   let summary: String
+  let headline: String
+  let guidance: String
   let detail: String
+  let iconStyle: MenuBarIconStyle
+  let tone: MenuBarTone
+  let flowline: FlowlinePresentation?
 
   var buttonTitle: String {
     statusIndicator.isEmpty ? "Runtinue" : "Runtinue \(statusIndicator)"
   }
 
-  init(status: SupervisorStatusWire?, isCommandInFlight: Bool = false) {
+  init(
+    status: SupervisorStatusWire?,
+    isCommandInFlight: Bool = false,
+    iconStyle: MenuBarIconStyle = .continuationMark
+  ) {
+    self.iconStyle = iconStyle
     guard !isCommandInFlight else {
       statusIndicator = "…"
       summary = "요청 처리 중, 덮개 닫기 금지"
+      headline = "요청 처리 중"
+      guidance = "덮개를 아직 닫지 마세요."
       detail = "Supervisor의 최신 보호 상태를 기다리는 중"
+      tone = .progress
+      flowline = nil
       return
     }
     guard let status else {
       statusIndicator = "?"
       summary = "보호 상태 확인 불가, 덮개 닫기 금지"
+      headline = "보호 상태 확인 불가"
+      guidance = "덮개를 닫지 마세요."
       detail = "Supervisor 연결과 현재 상태를 다시 확인하세요."
+      tone = .unknown
+      flowline = nil
       return
     }
+    flowline = FlowlinePresentation.trip(status: status)
     switch status.verdict {
     case .protected:
       statusIndicator = "✓"
       if status.closedLidAllowed {
         summary = "보호 중, 덮개 닫기 가능"
+        headline = "보호 중, \(Self.mode(status.mode))"
+        guidance = "덮개 닫기 가능"
+        tone = .verified
       } else {
-        summary = "Desk 보호 중, 덮개 열기 필요"
+        summary = "\(Self.mode(status.mode)) 보호 중, 덮개 열기 필요"
+        headline = "\(Self.mode(status.mode)) 보호 중"
+        guidance = "덮개를 열어 두세요."
+        tone = .progress
       }
     case .waitingForHotspot:
       statusIndicator = "…"
       summary = "핫스팟 연결 확인 중, 덮개 닫기 금지"
+      headline = "핫스팟 연결 확인 중"
+      guidance = "덮개를 아직 닫지 마세요."
+      tone = .progress
     case .acquiring:
       statusIndicator = "…"
       summary = "보호 확인 중, 덮개 닫기 금지"
+      headline = "수면 보호 확인 중"
+      guidance = "덮개를 아직 닫지 마세요."
+      tone = .progress
     case .releasing:
-      statusIndicator = "…"
+      statusIndicator = "!"
       summary = "정상 수면 복구 중, 덮개 닫기 금지"
+      headline = "정상 수면 복구 중"
+      guidance = "덮개를 닫지 마세요."
+      tone = .attention
     case .recoveryPending:
       statusIndicator = "!"
       summary = "정상 수면 복구 재시도 중, 덮개 닫기 금지"
+      headline = "정상 수면 복구 재시도 중"
+      guidance = "덮개를 닫지 마세요."
+      tone = .attention
     case .unsafe:
       statusIndicator = "!"
       summary = "기기 안전 우선 중단, 덮개 닫기 금지"
+      headline = "기기 안전 우선 중단"
+      guidance = "덮개를 닫지 마세요."
+      tone = .stopped
     case .unknown:
       statusIndicator = "?"
       summary = "보호 상태 확인 불가, 덮개 닫기 금지"
+      headline = "보호 상태 확인 불가"
+      guidance = "덮개를 닫지 마세요."
+      tone = .unknown
     case .inactive:
       statusIndicator = ""
       summary = status.mode == .adaptive ? "Adaptive 활동 대기" : "비활성"
+      headline = status.mode == .adaptive ? "Adaptive 활동 대기" : "보호 세션 없음"
+      guidance = "보호가 필요하면 모드를 시작하세요."
+      tone = .neutral
     }
 
     var fields: [String] = []
@@ -215,12 +347,35 @@ struct MenuBarPresentation: Equatable, Sendable {
       fields.append("배터리 \(battery)%")
     }
     if let thermal = status.thermalLevel {
-      fields.append("열 \(thermal)")
+      fields.append("열 \(Self.thermal(thermal))")
     }
     if let detail = status.detail, !detail.isEmpty {
       fields.append(detail)
     }
+    if let issues = status.observation?.issues, !issues.isEmpty {
+      fields.append("관찰 기록 경고, 진단 정보를 확인하세요.")
+    }
     self.detail = fields.joined(separator: " | ")
+  }
+
+  private static func mode(_ mode: WireSessionMode) -> String {
+    switch mode {
+    case .trip: "Trip"
+    case .adaptive: "Adaptive"
+    case .desk: "Desk"
+    case .none: "Runtinue"
+    }
+  }
+
+  private static func thermal(_ level: String) -> String {
+    switch level {
+    case "nominal": "정상"
+    case "fair": "약간 높음"
+    case "serious": "높음"
+    case "critical": "매우 높음"
+    case "unknown": "확인 불가"
+    default: level
+    }
   }
 
   private static func duration(_ seconds: Double) -> String {

@@ -10,7 +10,7 @@ final class MenuBarModelsTests: XCTestCase {
       (.protected, "✓"),
       (.waitingForHotspot, "…"),
       (.acquiring, "…"),
-      (.releasing, "…"),
+      (.releasing, "!"),
       (.recoveryPending, "!"),
       (.unsafe, "!"),
       (.unknown, "?"),
@@ -272,10 +272,118 @@ final class MenuBarModelsTests: XCTestCase {
 
   func testPresentationNeverClaimsClosedLidWhenNotAllowed() {
     let presentation = MenuBarPresentation(
-      status: status(verdict: .protected, closedLidAllowed: false)
+      status: status(verdict: .protected, closedLidAllowed: false, mode: .desk)
     )
 
     XCTAssertEqual(presentation.summary, "Desk 보호 중, 덮개 열기 필요")
+  }
+
+  func testProtectedTripOnlyShowsVerifiedEndpointAfterClosedLidReadBack() throws {
+    let verified = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .protected, closedLidAllowed: true)
+      ).flowline
+    )
+    let unverified = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .protected, closedLidAllowed: false)
+      ).flowline
+    )
+
+    XCTAssertEqual(verified.steps.map(\.state), [.passed, .passed, .passed, .verified])
+    XCTAssertEqual(unverified.steps.map(\.state), [.passed, .passed, .passed, .passed])
+  }
+
+  func testTripFlowlineTracksWaitingAcquiringAndRecovery() throws {
+    let waiting = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .waitingForHotspot, closedLidAllowed: false)
+      ).flowline
+    )
+    XCTAssertEqual(waiting.steps.map(\.state), [.current, .pending, .pending, .pending])
+
+    let acquiring = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .acquiring, closedLidAllowed: false)
+      ).flowline
+    )
+    XCTAssertEqual(acquiring.steps.map(\.state), [.passed, .passed, .passed, .current])
+
+    let recovery = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .recoveryPending, closedLidAllowed: false)
+      ).flowline
+    )
+    XCTAssertEqual(recovery.steps.map(\.label), ["수면 보호", "정상 수면"])
+    XCTAssertEqual(recovery.steps.map(\.state), [.passed, .current])
+  }
+
+  func testCriticalWarningRequiresResponsibilityUnconfirmedStateAndUnreadableOverride() {
+    let active = status(verdict: .protected, closedLidAllowed: true)
+    let inactive = status(
+      verdict: .inactive,
+      closedLidAllowed: false,
+      phase: .idle,
+      mode: .none,
+      sessionID: nil
+    )
+
+    XCTAssertFalse(
+      MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+        currentStatus: nil,
+        lastKnownStatus: nil,
+        sleepOverrideUnavailable: true
+      )
+    )
+    XCTAssertFalse(
+      MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+        currentStatus: nil,
+        lastKnownStatus: active,
+        sleepOverrideUnavailable: false
+      )
+    )
+    XCTAssertTrue(
+      MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+        currentStatus: nil,
+        lastKnownStatus: active,
+        sleepOverrideUnavailable: true
+      )
+    )
+    XCTAssertTrue(
+      MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+        currentStatus: status(
+          verdict: .recoveryPending,
+          closedLidAllowed: false,
+          phase: .recoveryPending
+        ),
+        lastKnownStatus: active,
+        sleepOverrideUnavailable: true
+      )
+    )
+    XCTAssertFalse(
+      MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+        currentStatus: nil,
+        lastKnownStatus: inactive,
+        sleepOverrideUnavailable: true
+      )
+    )
+  }
+
+  func testObservationIssueIsPresentedWithoutChangingProtectionVerdict() {
+    let presentation = MenuBarPresentation(
+      status: status(
+        verdict: .protected,
+        closedLidAllowed: true,
+        observation: WireObservationStatus(
+          buildID: nil,
+          issues: [.eventsUnavailable]
+        )
+      )
+    )
+
+    XCTAssertEqual(presentation.statusIndicator, "✓")
+    XCTAssertTrue(presentation.detail.contains("열 정상"))
+    XCTAssertTrue(presentation.detail.contains("관찰 기록 경고"))
   }
 
   func testPendingCommandOverridesPreviouslyProtectedPresentation() {
@@ -318,18 +426,21 @@ private func status(
   verdict: WireProtectionVerdict,
   closedLidAllowed: Bool,
   phase: WireTripPhase? = nil,
-  mode: WireSessionMode = .trip
+  mode: WireSessionMode = .trip,
+  sessionID: UUID? = UUID(),
+  observation: WireObservationStatus? = nil
 ) -> SupervisorStatusWire {
   SupervisorStatusWire(
     phase: phase ?? (verdict == .waitingForHotspot ? .waitingForHotspot : .active),
     mode: mode,
-    sessionID: UUID(),
+    sessionID: sessionID,
     verdict: verdict,
     closedLidAllowed: closedLidAllowed,
     remainingSeconds: 5_400,
     batteryPercent: 80,
     thermalLevel: "nominal",
     lidState: "open",
+    observation: observation,
     detail: nil,
     updatedAt: Date(timeIntervalSince1970: 1)
   )
