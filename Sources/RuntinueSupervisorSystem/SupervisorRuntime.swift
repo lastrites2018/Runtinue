@@ -81,6 +81,8 @@ public actor SupervisorRuntime {
   private var deskDisablePending = false
   private var trustedWiFiObservation: TrustedWiFiObservation?
   private var startupRecoveryDetail: String?
+  private var lidConflictWasObserved = false
+  private var lidConflictEventPending = false
   private var monitorTask: Task<Void, Never>?
 
   public init(
@@ -93,7 +95,7 @@ public actor SupervisorRuntime {
     powerAssertionBackend: any UserPowerAssertionBackend =
       UnavailableUserPowerAssertionBackend(),
     ownerUID: UInt32,
-    clock: any MonotonicTimeSource = SystemUptimeClock(),
+    clock: any MonotonicTimeSource = SystemContinuousClock(),
     monitorInterval: Duration = SupervisorRuntime.monitoringInterval,
     automaticMonitoring: Bool = true
   ) {
@@ -195,12 +197,14 @@ public actor SupervisorRuntime {
   public func startTrip(
     expectedHotspotSSID: String,
     hotspotHandoffTimeout: Duration,
-    hardCap: Duration
+    hardCap: Duration,
+    allowAlreadyConnected: Bool = false
   ) async throws -> SupervisorStatusWire {
     try await startTrip(
       networkTarget: .wifiHotspot(ssid: expectedHotspotSSID),
       hotspotHandoffTimeout: hotspotHandoffTimeout,
-      hardCap: hardCap
+      hardCap: hardCap,
+      allowAlreadyConnected: allowAlreadyConnected
     )
   }
 
@@ -208,7 +212,8 @@ public actor SupervisorRuntime {
   public func startTrip(
     networkTarget: CommuteNetworkTarget,
     hotspotHandoffTimeout: Duration,
-    hardCap: Duration
+    hardCap: Duration,
+    allowAlreadyConnected: Bool = false
   ) async throws -> SupervisorStatusWire {
     _ = await startup()
     guard startupRecoveryDetail == nil else {
@@ -224,7 +229,8 @@ public actor SupervisorRuntime {
     let request = CommuteTripRequest(
       networkTarget: networkTarget,
       hotspotHandoffTimeout: hotspotHandoffTimeout,
-      hardCap: hardCap
+      hardCap: hardCap,
+      allowAlreadyConnected: allowAlreadyConnected
     )
     let status = try await controller.start(
       request,
@@ -702,6 +708,10 @@ public actor SupervisorRuntime {
     commuteTarget: CommuteNetworkTarget?
   ) async -> (network: NetworkSnapshot, device: DeviceSafetySnapshot) {
     let sampled = await sampler.sample(commuteTarget: commuteTarget)
+    if sampled.device.lidSignalsDisagree, !lidConflictWasObserved {
+      lidConflictEventPending = true
+    }
+    lidConflictWasObserved = sampled.device.lidSignalsDisagree
     if commuteTarget == .usbTethering {
       return sampled
     }
@@ -747,6 +757,10 @@ public actor SupervisorRuntime {
   }
 
   private func persist(_ status: SupervisorStatusWire) async -> SupervisorStatusWire {
+    if lidConflictEventPending {
+      lidConflictEventPending = false
+      await eventRecorder?.record(.lidStateConflict)
+    }
     await eventRecorder?.observe(status)
     var issues = await eventRecorder?.issues() ?? []
     let buildID = eventRecorder?.buildID

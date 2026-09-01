@@ -87,7 +87,8 @@ public struct DeviceSafetyPolicy: Equatable, Sendable {
 
   public func evaluate(
     _ snapshot: DeviceSafetySnapshot,
-    at now: MonotonicInstant
+    at now: MonotonicInstant,
+    batteryDepletingOnAC: Bool = false
   ) -> DeviceSafetyVerdict {
     guard let age = now.durationSince(snapshot.capturedAt) else {
       return .stop(.snapshotFromFuture)
@@ -122,25 +123,14 @@ public struct DeviceSafetyPolicy: Equatable, Sendable {
       )
     }
 
-    let shouldApplyBatteryFloor: Bool
-    switch snapshot.powerConnection {
-    case .ac:
-      shouldApplyBatteryFloor = false
-    case .battery:
-      shouldApplyBatteryFloor = true
-    case .unknown:
-      shouldApplyBatteryFloor = effectiveLidClosed
-    }
-
-    guard shouldApplyBatteryFloor else {
-      return .safe
-    }
-    guard let batteryPercent = snapshot.batteryPercent else {
+    guard let batteryPercent = snapshot.batteryPercent, (0...100).contains(batteryPercent) else {
       return .stop(.batteryUnavailable)
     }
 
     let baseFloor: Int
-    if effectiveLidClosed {
+    if snapshot.powerConnection == .acCharging, !batteryDepletingOnAC {
+      baseFloor = Self.minimumOpenBatteryFloor
+    } else if effectiveLidClosed {
       baseFloor =
         effectiveExternalDisplayPresent
         ? closedWithDisplayBatteryFloor

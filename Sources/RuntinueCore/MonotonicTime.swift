@@ -1,24 +1,25 @@
-import Dispatch
+import Darwin
 import Foundation
 
-/// A process-local monotonic timestamp. It is intentionally not persisted.
+/// A boot-scoped, sleep-inclusive monotonic timestamp shared across processes.
+/// It is intentionally not persisted or compared across boots.
 /// A privileged helper restart must release an existing lease instead of
 /// reconstructing a prior monotonic deadline.
 public struct MonotonicInstant: Hashable, Comparable, Sendable {
-  public let uptimeNanoseconds: UInt64
+  public let continuousNanoseconds: UInt64
 
-  public init(uptimeNanoseconds: UInt64) {
-    self.uptimeNanoseconds = uptimeNanoseconds
+  public init(continuousNanoseconds: UInt64) {
+    self.continuousNanoseconds = continuousNanoseconds
   }
 
   public static func < (lhs: Self, rhs: Self) -> Bool {
-    lhs.uptimeNanoseconds < rhs.uptimeNanoseconds
+    lhs.continuousNanoseconds < rhs.continuousNanoseconds
   }
 
   public func adding(_ duration: Duration) -> Self {
     let delta = duration.nonnegativeNanoseconds
-    let (value, overflow) = uptimeNanoseconds.addingReportingOverflow(delta)
-    return Self(uptimeNanoseconds: overflow ? .max : value)
+    let (value, overflow) = continuousNanoseconds.addingReportingOverflow(delta)
+    return Self(continuousNanoseconds: overflow ? .max : value)
   }
 
   public func durationSince(_ earlier: Self) -> Duration? {
@@ -26,7 +27,7 @@ public struct MonotonicInstant: Hashable, Comparable, Sendable {
       return nil
     }
 
-    let difference = uptimeNanoseconds - earlier.uptimeNanoseconds
+    let difference = continuousNanoseconds - earlier.continuousNanoseconds
     if difference > UInt64(Int64.max) {
       return .nanoseconds(Int64.max)
     }
@@ -38,11 +39,11 @@ public protocol MonotonicTimeSource: Sendable {
   func now() -> MonotonicInstant
 }
 
-public struct SystemUptimeClock: MonotonicTimeSource {
+public struct SystemContinuousClock: MonotonicTimeSource {
   public init() {}
 
   public func now() -> MonotonicInstant {
-    MonotonicInstant(uptimeNanoseconds: DispatchTime.now().uptimeNanoseconds)
+    MonotonicInstant(continuousNanoseconds: clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW))
   }
 }
 

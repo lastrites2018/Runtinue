@@ -14,33 +14,20 @@ struct CallerAuthenticator: Sendable {
     self.requirementURL = requirementURL
   }
 
-  func accepts(_ connection: NSXPCConnection) -> Bool {
+  func configureAuthentication(on connection: NSXPCConnection) -> Bool {
     guard connection.effectiveUserIdentifier != 0,
-      connection.processIdentifier > 0,
       let requirement = loadRequirement()
     else {
       return false
     }
 
-    let attributes =
-      [
-        kSecGuestAttributePid as String: NSNumber(value: connection.processIdentifier)
-      ] as CFDictionary
-    var code: SecCode?
-    guard
-      SecCodeCopyGuestWithAttributes(nil, attributes, SecCSFlags(), &code) == errSecSuccess,
-      let code
-    else {
-      return false
-    }
-
-    // SecCode is dynamic code. Static-only validation flags are rejected by
-    // SecCodeCheckValidity on current macOS; the package verifier performs the
-    // separate strict, all-architectures check before installation.
-    return SecCodeCheckValidity(code, SecCSFlags(), requirement) == errSecSuccess
+    // The public XPC API binds code identity to the peer and checks each message.
+    // The requirement is syntax-checked before this potentially throwing ObjC API.
+    connection.setCodeSigningRequirement(requirement)
+    return true
   }
 
-  private func loadRequirement() -> SecRequirement? {
+  private func loadRequirement() -> String? {
     var info = stat()
     guard Darwin.lstat(requirementURL.path, &info) == 0,
       info.st_mode & S_IFMT == S_IFREG,
@@ -66,6 +53,6 @@ struct CallerAuthenticator: Sendable {
     else {
       return nil
     }
-    return requirement
+    return requirementText
   }
 }

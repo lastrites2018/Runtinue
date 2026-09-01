@@ -35,7 +35,7 @@ final class HelperReleaseConfirmationTests: XCTestCase {
       outcome: .success,
       status: HelperStatusWire(
         phase: phase, leaseID: leaseID, ownerUID: nil, sleepOverride: sleep,
-        ttlDeadlineUptimeNanoseconds: nil, hardDeadlineUptimeNanoseconds: nil, detail: nil
+        ttlDeadlineContinuousNanoseconds: nil, hardDeadlineContinuousNanoseconds: nil, detail: nil
       ),
       rejection: nil
     )

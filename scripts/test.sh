@@ -13,5 +13,7 @@ swift test --package-path "${project_root}" --disable-sandbox
 /usr/bin/plutil -lint "${project_root}/Packaging/Runtinue.app.Info.plist"
 "${script_dir}/test-release-tools.sh"
 "${script_dir}/test-install-preflight.sh"
+/bin/zsh "${script_dir}/test-version.sh"
+/bin/zsh "${script_dir}/test-hardware-validation.sh"
 
-print "단위 테스트, plist, release 입력과 설치 전 검사 통과"
+print "단위 테스트, plist, 버전, release 입력, 설치 전 검사와 실기기 기록 gate 통과"

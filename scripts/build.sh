@@ -5,14 +5,10 @@ script_dir=${0:A:h}
 project_root=${script_dir:h}
 release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 distribution_root="${release_root}/distribution"
-version=${VERSION:-0.2.1}
+version=$(/bin/zsh "${script_dir}/version.sh")
 build_number=${BUILD_NUMBER:-1}
 application_identity=${DEVELOPER_ID_APPLICATION:?DEVELOPER_ID_APPLICATION을 지정해야 합니다}
 
-[[ "${version}" =~ '^[0-9]+([.][0-9]+){1,3}$' ]] || {
-  print -u2 "VERSION 형식이 올바르지 않음"
-  exit 64
-}
 [[ "${build_number}" =~ '^[1-9][0-9]*$' ]] || {
   print -u2 "BUILD_NUMBER는 양의 정수여야 합니다"
   exit 64
@@ -31,12 +27,24 @@ esac
 release_root="${release_root_abs}"
 distribution_root="${release_root}/distribution"
 
-for tool in swift codesign csreq ditto sips iconutil; do
+[[ "$(/usr/bin/uname -m)" == arm64 ]] || {
+  print -u2 "Runtinue 패키지는 Apple Silicon의 네이티브 arm64 환경에서 빌드해야 합니다"
+  exit 65
+}
+
+for tool in swift codesign csreq ditto sips iconutil lipo; do
   command -v "${tool}" >/dev/null || {
     print -u2 "필수 도구를 찾을 수 없음: ${tool}"
     exit 69
   }
 done
+
+source_commit=$(/usr/bin/git -C "${project_root}" rev-parse --verify HEAD)
+source_dirty=false
+if ! /usr/bin/git -C "${project_root}" diff --quiet HEAD -- || \
+  [[ -n "$(/usr/bin/git -C "${project_root}" ls-files --others --exclude-standard)" ]]; then
+  source_dirty=true
+fi
 
 mkdir -p "${release_root}"
 rm -rf -- "${distribution_root}"
@@ -46,8 +54,8 @@ export CLANG_MODULE_CACHE_PATH="${project_root}/.build/clang-module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="${project_root}/.build/swiftpm-module-cache"
 mkdir -p "${CLANG_MODULE_CACHE_PATH}" "${SWIFTPM_MODULECACHE_OVERRIDE}"
 
-swift build --package-path "${project_root}" -c release --disable-sandbox
-swift_bin=$(swift build --package-path "${project_root}" -c release --show-bin-path --disable-sandbox)
+swift build --package-path "${project_root}" -c release --arch arm64 --disable-sandbox
+swift_bin=$(swift build --package-path "${project_root}" -c release --arch arm64 --show-bin-path --disable-sandbox)
 
 for binary in runtinue runtinue-helper runtinue-supervisor runtinue-hook runtinue-activity; do
   test -x "${swift_bin}/${binary}" || {
@@ -76,6 +84,18 @@ done
 /usr/bin/iconutil --convert icns --output "${app_root}/Contents/Resources/Runtinue.icns" "${iconset_root}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version}" "${app_root}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_number}" "${app_root}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :RuntinueSourceCommit ${source_commit}" "${app_root}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :RuntinueSourceDirty ${source_dirty}" "${app_root}/Contents/Info.plist"
+
+for binary in \
+  "${distribution_root}/bin/runtinue" "${distribution_root}/bin/runtinue-helper" \
+  "${distribution_root}/bin/runtinue-supervisor" "${distribution_root}/bin/runtinue-hook" \
+  "${distribution_root}/bin/runtinue-activity" "${app_root}/Contents/MacOS/runtinue-menubar"; do
+  [[ "$(/usr/bin/lipo -archs "${binary}")" == arm64 ]] || {
+    print -u2 "arm64 전용 빌드 산출물이 아닙니다: ${binary}"
+    exit 65
+  }
+done
 
 sign_binary() {
   local path=$1

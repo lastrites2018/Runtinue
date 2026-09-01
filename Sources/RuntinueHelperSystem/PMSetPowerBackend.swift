@@ -2,6 +2,7 @@ import Darwin
 import Dispatch
 import Foundation
 import IOKit
+import RuntinueCore
 import RuntinueHelperCore
 
 public enum PMSetPowerBackendError: Error, CustomStringConvertible, Sendable {
@@ -74,15 +75,15 @@ public actor PMSetPowerBackend: SleepPowerBackend {
     }
 
     let deadline =
-      DispatchTime.now().uptimeNanoseconds
+      SystemContinuousClock().now().continuousNanoseconds
       + UInt64(executionTimeout * 1_000_000_000)
-    while process.isRunning && DispatchTime.now().uptimeNanoseconds < deadline {
+    while process.isRunning && SystemContinuousClock().now().continuousNanoseconds < deadline {
       try? await Task.sleep(nanoseconds: 50_000_000)
     }
     if process.isRunning {
       process.terminate()
-      let terminationDeadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
-      while process.isRunning && DispatchTime.now().uptimeNanoseconds < terminationDeadline {
+      let terminationDeadline = SystemContinuousClock().now().continuousNanoseconds + 1_000_000_000
+      while process.isRunning && SystemContinuousClock().now().continuousNanoseconds < terminationDeadline {
         try? await Task.sleep(nanoseconds: 50_000_000)
       }
       if process.isRunning {

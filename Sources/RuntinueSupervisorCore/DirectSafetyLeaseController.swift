@@ -28,7 +28,7 @@ public actor DirectSafetyLeaseController {
   public init(
     leaseBackend: any SupervisorLeaseBackend,
     ownerUID: UInt32,
-    clock: any MonotonicTimeSource = SystemUptimeClock()
+    clock: any MonotonicTimeSource = SystemContinuousClock()
   ) {
     self.leaseBackend = leaseBackend
     self.ownerUID = ownerUID

@@ -16,7 +16,7 @@ public actor CommuteTripCoordinator {
 
   public init(
     leaseBackend: any PrivilegedLeaseBackend,
-    clock: any MonotonicTimeSource = SystemUptimeClock()
+    clock: any MonotonicTimeSource = SystemContinuousClock()
   ) {
     self.engine = CommuteTripEngine()
     self.leaseBackend = leaseBackend

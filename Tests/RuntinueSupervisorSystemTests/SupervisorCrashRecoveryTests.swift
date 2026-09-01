@@ -189,7 +189,7 @@ private final class CrashRecoveryClock: @unchecked Sendable, MonotonicTimeSource
   func now() -> MonotonicInstant {
     lock.lock()
     defer { lock.unlock() }
-    return MonotonicInstant(uptimeNanoseconds: monotonic)
+    return MonotonicInstant(continuousNanoseconds: monotonic)
   }
 
   func now() -> Date {

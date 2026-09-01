@@ -19,6 +19,7 @@ public enum SupervisorEventKind: String, Codable, Sendable {
   case recoveryCompleted
   case normalSleepObserved
   case heartbeatFailed
+  case lidStateConflict
   case sessionEnded
 }
 

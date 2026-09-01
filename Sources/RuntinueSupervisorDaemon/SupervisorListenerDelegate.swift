@@ -28,7 +28,7 @@ final class SupervisorListenerDelegate: NSObject, NSXPCListenerDelegate,
     _ listener: NSXPCListener,
     shouldAcceptNewConnection connection: NSXPCConnection
   ) -> Bool {
-    guard authenticator.accepts(connection) else {
+    guard authenticator.configureAuthentication(on: connection) else {
       Task { await runtime.recordEvent(.authorizationRejected, attemptID: UUID()) }
       return false
     }

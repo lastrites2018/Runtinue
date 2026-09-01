@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir=${0:A:h}
 project_root=${script_dir:h}
 work_root=$(/usr/bin/mktemp -d /tmp/runtinue-release-tool-tests.XXXXXX)
+current_version=$(/bin/zsh "${script_dir}/version.sh")
 cleanup() {
   /bin/rm -rf -- "${work_root}"
 }
@@ -179,12 +180,11 @@ print "설치와 rollback 예상 SHA 필수 gate 통과"
 
 mkdir -p "${project_root}/.release"
 occupied_root=$(/usr/bin/mktemp -d "${project_root}/.release/release-tool-occupied.XXXXXX")
-/usr/bin/touch "${occupied_root}/Runtinue-0.2.0-development.pkg"
+/usr/bin/touch "${occupied_root}/Runtinue-${current_version}-development.pkg"
 expect_exit 73 /usr/bin/env \
   RUNTINUE_RELEASE_ROOT="${occupied_root}" \
   RUNTINUE_DEVELOPMENT_PACKAGE=YES \
   DEVELOPER_ID_APPLICATION=- \
-  VERSION=0.2.0 \
   "${script_dir}/package.sh"
 /bin/rm -rf -- "${occupied_root}"
 print "기존 패키지 보존 gate 통과"
@@ -237,10 +237,6 @@ expect_exit 64 /usr/bin/env \
   "${script_dir}/generate-cask.sh"
 
 candidate_pkg=${RUNTINUE_RELEASE_TEST_PKG:-}
-latest_pointer="${project_root}/.release/Runtinue-latest-development.json"
-if [[ -z "${candidate_pkg}" && -f "${latest_pointer}" ]]; then
-  candidate_pkg=$(/usr/bin/plutil -extract packagePath raw "${latest_pointer}")
-fi
 candidate_manifest="${candidate_pkg}.manifest.json"
 if [[ -f "${candidate_pkg}" && -f "${candidate_manifest}" ]]; then
   candidate_sha=$(/usr/bin/shasum -a 256 -- "${candidate_pkg}" | /usr/bin/awk '{print $1}')

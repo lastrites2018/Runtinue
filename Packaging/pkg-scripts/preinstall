@@ -1,6 +1,11 @@
 #!/bin/zsh
 set -euo pipefail
 
+if [[ "$(/usr/bin/uname -m)" != arm64 ]]; then
+  print -u2 "Runtinue은 Apple Silicon 전용입니다. arm64 네이티브 환경에서 설치하세요"
+  exit 65
+fi
+
 target_volume=${3:-/}
 if [[ "${target_volume}" != "/" ]]; then
   print -u2 "Runtinue은 현재 부팅 볼륨에만 설치할 수 있습니다"

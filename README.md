@@ -26,7 +26,7 @@ Runtinue는 개발자 본인이 출퇴근할 때 사용하려고 만든 개인�
 ## 하는 일과 현재 한계
 
 - 지정한 Wi-Fi 핫스팟 연결 또는 USB 테더링으로의 전환과 인터넷 도달 여부를 확인합니다.
-- Wi-Fi 핫스팟에 먼저 연결한 뒤 통근 보호를 시작할 수 있습니다. 메뉴바는 마지막으로 입력한 핫스팟 이름을 기억합니다.
+- Wi-Fi 핫스팟에 먼저 연결한 뒤 통근 보호를 시작할 수 있습니다. 처음에는 사용자가 휴대전화 핫스팟임을 확인하고, 메뉴바는 실제 보호가 확인된 대상을 기억합니다.
 - 조건이 맞으면 정해진 시간 동안 수면을 억제하고 기기 상태를 감시합니다.
 - 열 상태, 배터리, 센서의 최신성, 백그라운드 서비스의 응답과 제한 시간을 확인합니다.
 - 메뉴바와 CLI에서 시작, 상태 확인, 중단, 기록과 진단 기능을 제공합니다.
@@ -40,7 +40,8 @@ Runtinue는 개발자 본인이 출퇴근할 때 사용하려고 만든 개인�
 
 ## 시작 전 확인
 
-- macOS 13 이상과 Swift 6.0 이상이 필요합니다. 소스 빌드에는 Xcode 또는 해당 Swift 도구를 제공하는 Command Line Tools가 필요합니다.
+- Apple Silicon MacBook과 macOS 13 이상이 필요합니다. 패키지 빌드와 직접 설치는 네이티브 arm64 환경만 허용하며, Intel Mac과 Rosetta 실행 환경은 지원하지 않습니다.
+- 소스 빌드에는 Swift 6.0 이상을 제공하는 Xcode 또는 Command Line Tools가 필요합니다.
 - 실제 수면 제어에는 전체 패키지 설치와 관리자 권한이 필요합니다. 앱 파일만 복사하면 서비스와 호출자 인증 구성이 맞지 않을 수 있습니다.
 - Wi-Fi 이름을 감지하려면 메뉴바 앱에서 위치 권한을 허용해야 합니다. 시스템 설정에서 권한을 다시 확인할 수 있습니다.
 - 이 저장소는 소스를 공개합니다. 공증된 설치 패키지를 제공한다고 가정하지 마세요.
@@ -57,6 +58,10 @@ cd Runtinue
 
 테스트는 모의 전원 장치와 입력을 사용하며 실제 수면 설정을 변경하지 않습니다. 테스트 통과만으로 실제 Mac의 안전성이나 이동 중 작업 지속이 검증되지는 않습니다.
 
+CI에는 디버그 테스트, `swift test -c release --disable-sandbox`, 실제 개발 패키지 생성과 payload 검사를 구성했습니다. 패키지 검사는 실행 파일 전체의 arm64 여부, 앱과 패키지 버전, 코드서명 요구 조건, 설치 스크립트와 manifest를 확인하며 패키지를 설치하지 않습니다. macOS 작업은 [GitHub의 arm64 `macos-15` 실행기](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)를 사용합니다.
+
+버전은 루트의 `VERSION` 파일 한 곳에서 관리합니다. 빌드, 패키징, 배포와 Cask 생성이 이 값을 읽으며, 다른 버전의 `VERSION` 환경 변수는 거부합니다. 빌드 시 앱 Info.plist와 manifest에 소스 commit SHA와 커밋되지 않은 변경의 존재 여부도 기록합니다. `dirty`인 개발 패키지는 commit SHA만으로 소스 전체를 재현할 수 없으므로 패키지 SHA-256도 함께 보관하세요.
+
 소스에서 읽기 전용 진단을 실행할 수 있습니다.
 
 ```sh
@@ -71,13 +76,14 @@ swift run --disable-sandbox runtinue diagnose
 ```sh
 mkdir -p .release
 runtinue_package_dir=$(mktemp -d "$PWD/.release/development.XXXXXX")
-RUNTINUE_RELEASE_ROOT="$runtinue_package_dir" VERSION=0.2.0 ./scripts/package-development.sh
+RUNTINUE_RELEASE_ROOT="$runtinue_package_dir" ./scripts/package-development.sh
 ```
 
 생성된 패키지와 manifest는 같은 디렉터리에 보관합니다. 패키지를 직접 빌드했는지 확인하고 SHA-256을 대조한 후 설치 여부를 결정하세요. 개발 패키지의 검증 결과는 배포 승인이나 하드웨어 안전 인증을 뜻하지 않습니다.
 
 ```sh
-runtinue_package="$runtinue_package_dir/Runtinue-0.2.0-development.pkg"
+runtinue_version=$(./scripts/version.sh)
+runtinue_package="$runtinue_package_dir/Runtinue-$runtinue_version-development.pkg"
 runtinue_manifest="$runtinue_package.manifest.json"
 shasum -a 256 "$runtinue_package"
 
@@ -113,15 +119,21 @@ sudo '/Library/Application Support/com.example.safeclam/uninstall-safeclam'
 
 1. `/Applications/Runtinue.app`을 실행하고, Wi-Fi를 사용할 경우 메뉴에서 감지 권한을 허용합니다.
 2. 휴대전화의 핫스팟을 켜고 macOS에서 연결합니다.
-3. 메뉴바의 `통근 보호 시작…`에서 핫스팟 이름을 확인합니다. 처음에는 이름을 입력하거나 `현재 Wi-Fi` 옆의 `사용` 버튼으로 채웁니다. 다음에는 마지막으로 입력한 이름이 채워집니다.
+3. 메뉴바의 `통근 보호 시작…`에서 핫스팟 이름을 확인합니다. 처음에는 이름을 입력하거나 `현재 Wi-Fi` 옆의 `사용` 버튼으로 채운 뒤, `휴대전화 핫스팟이 맞습니다`를 선택합니다. 회사나 집 Wi-Fi를 핫스팟으로 확인하지 마세요.
 4. 보호 시간을 정하고 시작합니다. 이미 지정한 핫스팟에 연결되어 있으면 다시 연결할 필요 없이 인터넷과 기기 상태를 확인합니다. 메뉴에서 `보호 중, 덮개 닫기 가능`을 확인하세요. 상태를 확인할 수 없거나 경고가 있으면 덮개를 닫지 마세요.
 5. 도착하면 Trip을 중단하고 정상 수면 설정으로 복구되었는지 확인합니다.
 
-회사나 집 Wi-Fi에서 먼저 시작한 뒤 지정한 핫스팟으로 연결해도 됩니다. 기본 연결 대기 시간은 15분입니다. 저장한 이름은 입력 편의에만 사용하며, 보호를 시작할 때마다 실제 연결과 안전 조건을 다시 확인합니다. Wi-Fi 암호는 저장하지 않습니다.
+회사나 집 Wi-Fi에서 먼저 시작한 뒤 지정한 핫스팟으로 연결해도 됩니다. 기본 연결 대기 시간은 15분입니다. 보호가 실제로 확인되면 SSID, 기본 게이트웨이와 Wi-Fi 인터페이스를 로컬에 저장하고 다음 시작 때 재사용합니다. 같은 이름이어도 현재 게이트웨이나 인터페이스가 달라지면 다시 확인합니다. 이름을 수정한 경우에도 새 확인이 필요합니다.
+
+입력값은 별도로 기억하지만, 시작 실패나 대기 상태만으로 기존의 확인된 대상을 덮어쓰지 않습니다. 저장 정보는 입력 편의에만 사용하며 Wi-Fi 암호는 저장하지 않습니다. SSID와 게이트웨이는 휴대전화의 신원을 증명하지 못합니다. 휴대전화 핫스팟 여부는 사용자가 확인하고, 실제 연결, 인터넷과 기기 안전 조건은 시작할 때마다 다시 검사합니다.
 
 USB 테더링은 기존 연결에서 Trip을 시작한 뒤 USB로 전환해야 합니다. 현재 구현은 네트워크 인터페이스가 바뀌었는지 확인합니다.
 
 ```sh
+# 이미 휴대전화 핫스팟에 연결했다면 명시적으로 확인합니다.
+runtinue trip start --for 60m --hotspot "My Hotspot" --already-connected
+
+# 회사나 집 Wi-Fi에서 시작한 뒤 핫스팟으로 전환한다면 다음 명령을 사용합니다.
 runtinue trip start --for 60m --hotspot "My Hotspot"
 
 # USB 테더링을 사용한다면 Wi-Fi 명령 대신 다음 명령을 사용합니다.
@@ -131,7 +143,17 @@ runtinue status
 runtinue stop
 ```
 
-Trip의 기본 최대 시간은 90분입니다. 기본 보호 정책에서는 배터리로 동작하고 외부 화면 없이 덮개가 닫혀 있을 때 배터리 잔량 30% 미만 또는 열 상태 `fair` 이상이면 실행 유지를 중단합니다. 다른 기기 상태에서는 적용 기준이 달라지며, 저전력 모드에서는 더 엄격한 기준을 적용합니다. 이 수치는 소프트웨어 정책이며 안전 인증 기준으로 사용할 수 없습니다.
+CLI와 Swift API는 기본적으로 연결 전환을 기다립니다. CLI의 `--already-connected`와 Swift API의 `.trip(expectedHotspotSSID: ..., alreadyConnected: true)`가 이미 연결된 핫스팟에 대한 사용자의 확인을 전달합니다. USB 테더링에는 이 옵션을 사용할 수 없습니다. 보호가 시작된 뒤 네트워크가 잠시 끊겨도 그 이유만으로 lease를 종료하지 않으며, 안전 조건과 시간 제한은 계속 적용합니다.
+
+Trip의 기본 최대 시간은 90분입니다. 배터리로 동작하며 외부 화면 없이 덮개가 닫혀 있을 때는 배터리 잔량 30% 미만이면 실행 유지를 중단합니다. AC에 연결됐지만 충전하지 않거나 충전 표시 중 배터리가 두 차례 연속 감소한 경우에도 같은 배터리 기준을 적용합니다. 충전 상태에도 최소 10%의 비상 기준을 적용하며, 배터리 정보를 읽지 못하면 보호를 제한합니다. 외부 화면 없이 덮개가 닫혀 있을 때의 열 기준은 전원 연결과 관계없이 `fair` 이상입니다. 다른 덮개와 화면 상태에서는 적용 기준이 달라지며, 저전력 모드에서는 더 엄격한 기준을 적용합니다. 이 수치는 소프트웨어 정책이며 안전 인증 기준으로 사용할 수 없습니다.
+
+### 시간 제한과 복구 경계
+
+Helper와 Supervisor는 시스템 수면 시간까지 포함하는 공통 연속 시계로 TTL과 최대 시간을 계산합니다. 수면에서 깨어났을 때 만료된 lease를 갱신해 되살리지 않습니다. 구현은 나노초 단위의 `CLOCK_MONOTONIC_RAW`를 사용합니다. [Apple의 연속 시간 설명](https://developer.apple.com/documentation/driverkit/mach_continuous_time)을 참고하세요.
+
+활성 Helper는 1초 주기로 `SleepDisabled`를 읽습니다. 설정이 풀렸으면 한 번 복구하고 다시 읽어 확인하며, 실패하거나 읽을 수 없으면 정상 수면 복구로 전환합니다. 복구를 확인하지 못한 상태와 lease 기록은 재시도를 위해 유지합니다. 덮개 레지스트리와 내장 화면 신호가 충돌하면 보수적인 덮개 기준을 적용하고 진단 이벤트를 기록합니다. OS가 프로세스를 멈춘 동안에는 이 감시도 실행되지 않으므로 즉시 복구를 보장하지 않습니다.
+
+프로세스 간 통신은 protocol 5를 사용합니다. 이전 protocol과 섞어 실행하지 말고 앱, CLI, Supervisor와 Helper를 같은 패키지로 함께 교체하세요. XPC 호출자는 PID 조회 대신 macOS의 [연결 단위 코드서명 검증](https://developer.apple.com/documentation/foundation/nsxpcconnection/setcodesigningrequirement(_:))을 사용합니다. 성공 응답도 lease ID, 사용자 UID, 실제 수면 설정과 유효한 기한이 모두 일치해야 인정합니다.
 
 ### 상태와 문제 확인
 
@@ -153,6 +175,39 @@ runtinue events
 runtinue stop
 sudo ./scripts/uninstall.sh
 ```
+
+## 실기기 검증과 배포 기준
+
+이 소스 변경에 대해 실제 덮개 닫힘, AC 전환, 발열 유도나 프로세스 강제 종료 시험을 완료했다는 기록은 아직 게시하지 않았습니다. 자동화 검사와 패키지 정적 검증을 통과해도 무인 이동 운용이나 일반 사용자 배포의 근거로 사용할 수 없습니다. 특히 macOS 13과 최신 macOS의 깨끗한 설치에서 `SleepDisabled` 읽기를 확인해야 합니다. 키가 없을 때 정상으로 가정하지 않고 설치와 보호를 중단합니다.
+
+검증은 정확한 패키지 SHA-256과 commit에 결박해 수행합니다. 패키지 바이트가 달라지면 이전 결과를 재사용하지 마세요. 아래 명령은 현재 Mac 모델과 macOS 버전, 패키지 식별자와 서명 상태를 포함한 **미실행 기록**만 생성합니다. 전원 설정을 바꾸거나 시험 결과를 자동으로 채우지 않습니다.
+
+```sh
+./scripts/hardware-validation.sh create \
+  "$runtinue_manifest" "$runtinue_package.hardware.json"
+```
+
+기록에는 다음 시험별 시작과 종료 시각, 시작과 종료의 `SleepDisabled`, 관찰한 결과와 복구 결과를 남깁니다.
+
+| 시험 영역 | 필수 확인 |
+| --- | --- |
+| 설치와 복구 | 새 설치, 정상 획득과 해제, root Helper 직접 호출 거부, Supervisor 종료, Helper 종료 후 복구 |
+| 이동과 전원 | 통풍되는 책상에서 덮개 닫힘 15분, AC에서 배터리 전환, 핫스팟 전환, 이미 연결한 핫스팟 시작, USB 테더링 |
+| 안전 중단 | 배터리 기준, 열 상태 기준, 센서 읽기 불가에서 정상 수면 복구 |
+| 수명주기 | 재부팅, 업그레이드와 제거 후 정상 수면 확인 |
+
+각 시험은 덮개를 연 정상 수면 설정에서 준비하고, 종료 후에도 `SleepDisabled=No`를 확인합니다. 열 시험을 위해 기기를 밀폐하거나 위험한 온도로 가열하지 마세요. 안전하게 검증할 수 없는 항목은 `notRun`으로 남기고 배포를 보류하세요. 프로세스 종료 시험 등 실제 전원을 바꾸는 `integration-test.sh`는 별도의 명시적 동의와 고정 패키지 검사를 요구합니다.
+
+실제로 수행한 항목에만 `passed`와 UTC 시각을 기록하고 `operatorConfirmed`를 설정합니다. 기록 검사는 대상 불일치, 누락, 시간 오류와 정상 수면 복구 미확인을 거부하지만, 사람이 작성한 기록의 사실 여부를 독립적으로 증명하지는 않습니다. 통과 범위도 기록한 모델과 OS에 한정됩니다.
+
+```sh
+./scripts/hardware-validation.sh verify \
+  "$runtinue_manifest" "$runtinue_package.hardware.json"
+```
+
+정식 배포 후보는 깨끗한 소스와 현재 commit을 가리키는 `v$(./scripts/version.sh)` 태그를 요구합니다. `release.sh`는 Developer ID 서명, 공증과 staple 후 후보를 보존합니다. 그 후보의 실기기 기록이 없으면 종료 코드 78로 최신 release 포인터 게시를 보류합니다. 검증을 마친 뒤 동일한 후보의 manifest와 `RUNTINUE_VALIDATION_RECORD`를 지정해 `release-manifest.sh publish`를 실행해야 합니다. 개발 패키지용 포인터는 정식 배포 승인과 별개입니다. 이 스크립트는 GitHub Release를 자동으로 만들지 않습니다.
+
+실기기 기록과 원본 로그는 `.release` 아래에 로컬로 보관합니다. 공개 검증 결과는 개인정보와 기기별 네트워크 정보를 제거한 뒤 이 README에만 정리하며, 별도 개발 문서를 게시하지 않습니다.
 
 ## 저장소 작업 규칙
 

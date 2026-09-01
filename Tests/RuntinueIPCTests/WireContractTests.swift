@@ -4,6 +4,31 @@ import XCTest
 @testable import RuntinueIPC
 
 final class WireContractTests: XCTestCase {
+  func testHelperDurationValidationRejectsNonFiniteAndOutOfRangeNumbersBeforeConversion() {
+    for invalid in [Double.nan, .infinity, -.infinity, 0, -1, 91, 1e300] {
+      XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: invalid, maximumSeconds: 90))
+    }
+    XCTAssertEqual(RuntinueIPCContract.validatedDuration(seconds: 0.5, maximumSeconds: 90), .milliseconds(500))
+    XCTAssertEqual(RuntinueIPCContract.validatedDuration(seconds: 90, maximumSeconds: 90), .seconds(90))
+    XCTAssertEqual(RuntinueIPCContract.validatedDuration(seconds: 86_400, maximumSeconds: 86_400), .seconds(86_400))
+    XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: 86_401, maximumSeconds: 86_400))
+    XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: 1, maximumSeconds: .nan))
+    XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: .leastNonzeroMagnitude, maximumSeconds: 90))
+  }
+
+  func testPreviousUptimeProtocolIsRejectedAndWireNamesDeclareContinuousTime() throws {
+    XCTAssertEqual(RuntinueIPCContract.protocolVersion, 5)
+    XCTAssertFalse(RuntinueIPCContract.acceptsRequest(protocolVersion: 4, byteCount: 100))
+    let status = HelperStatusWire(
+      phase: .active, leaseID: UUID(), ownerUID: 501, sleepOverride: .disabled,
+      ttlDeadlineContinuousNanoseconds: 10, hardDeadlineContinuousNanoseconds: 20, detail: nil
+    )
+    let text = try XCTUnwrap(String(data: JSONEncoder().encode(status), encoding: .utf8))
+    XCTAssertTrue(text.contains("ttlDeadlineContinuousNanoseconds"))
+    XCTAssertTrue(text.contains("hardDeadlineContinuousNanoseconds"))
+    XCTAssertFalse(text.contains("Uptime"))
+  }
+
   func testObservationFieldsRoundTripAndLegacyStatusStillDecodes() throws {
     let legacy = SupervisorStatusWire(
       phase: .idle, sessionID: nil, verdict: .inactive, remainingSeconds: nil,
@@ -44,8 +69,8 @@ final class WireContractTests: XCTestCase {
         leaseID: UUID(),
         ownerUID: 501,
         sleepOverride: .disabled,
-        ttlDeadlineUptimeNanoseconds: 1_000,
-        hardDeadlineUptimeNanoseconds: 2_000,
+        ttlDeadlineContinuousNanoseconds: 1_000,
+        hardDeadlineContinuousNanoseconds: 2_000,
         detail: "retrying"
       ),
       rejection: nil
@@ -61,13 +86,15 @@ final class WireContractTests: XCTestCase {
     let request = StartTripWireRequest(
       expectedHotspotSSID: "Jaewan iPhone",
       hotspotHandoffTimeoutSeconds: 900,
-      hardCapSeconds: 5_400
+      hardCapSeconds: 5_400,
+      allowAlreadyConnected: true
     )
 
     let data = try JSONEncoder().encode(request)
     let decoded = try JSONDecoder().decode(StartTripWireRequest.self, from: data)
 
     XCTAssertEqual(decoded, request)
+    XCTAssertTrue(decoded.allowAlreadyConnected)
     XCTAssertLessThan(data.count, RuntinueIPCContract.maximumRequestBytes)
   }
 
@@ -83,6 +110,7 @@ final class WireContractTests: XCTestCase {
 
     XCTAssertEqual(decoded, request)
     XCTAssertNil(decoded.expectedHotspotSSID)
+    XCTAssertFalse(decoded.allowAlreadyConnected)
   }
 
   func testWiFiObservationRoundTripsWithinRequestLimit() throws {

@@ -33,13 +33,15 @@ public struct StartTripWireRequest: Codable, Equatable, Sendable {
   public let hotspotHandoffTimeoutSeconds: Double
   public let hardCapSeconds: Double
   public let safetyProfile: WireSafetyProfile
+  public let allowAlreadyConnected: Bool
 
   public init(
     protocolVersion: Int = RuntinueIPCContract.protocolVersion,
     expectedHotspotSSID: String,
     hotspotHandoffTimeoutSeconds: Double,
     hardCapSeconds: Double,
-    safetyProfile: WireSafetyProfile = .bagSafe
+    safetyProfile: WireSafetyProfile = .bagSafe,
+    allowAlreadyConnected: Bool = false
   ) {
     self.protocolVersion = protocolVersion
     self.networkTargetKind = .wifiHotspot
@@ -47,6 +49,7 @@ public struct StartTripWireRequest: Codable, Equatable, Sendable {
     self.hotspotHandoffTimeoutSeconds = hotspotHandoffTimeoutSeconds
     self.hardCapSeconds = hardCapSeconds
     self.safetyProfile = safetyProfile
+    self.allowAlreadyConnected = allowAlreadyConnected
   }
 
   public init(
@@ -55,7 +58,8 @@ public struct StartTripWireRequest: Codable, Equatable, Sendable {
     expectedHotspotSSID: String? = nil,
     hotspotHandoffTimeoutSeconds: Double,
     hardCapSeconds: Double,
-    safetyProfile: WireSafetyProfile = .bagSafe
+    safetyProfile: WireSafetyProfile = .bagSafe,
+    allowAlreadyConnected: Bool = false
   ) {
     self.protocolVersion = protocolVersion
     self.networkTargetKind = networkTargetKind
@@ -63,6 +67,7 @@ public struct StartTripWireRequest: Codable, Equatable, Sendable {
     self.hotspotHandoffTimeoutSeconds = hotspotHandoffTimeoutSeconds
     self.hardCapSeconds = hardCapSeconds
     self.safetyProfile = safetyProfile
+    self.allowAlreadyConnected = allowAlreadyConnected
   }
 }
 

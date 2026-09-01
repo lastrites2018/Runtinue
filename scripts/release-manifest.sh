@@ -83,6 +83,24 @@ package_version() {
   print -r -- "${value}"
 }
 
+read_source_identity() {
+  local app_info="${payload_root}/Applications/Runtinue.app/Contents/Info.plist"
+  local dirty
+  source_commit=$(/usr/bin/plutil -extract RuntinueSourceCommit raw "${app_info}" 2>/dev/null || true)
+  dirty=$(/usr/bin/plutil -extract RuntinueSourceDirty raw "${app_info}" 2>/dev/null || true)
+  source_state=unknown
+  if [[ -z "${source_commit}" && -z "${dirty}" ]]; then
+    source_commit=unavailable
+    return
+  fi
+  [[ "${source_commit}" =~ '^[0-9a-f]{40}$' ]] || fail "앱 소스 commit 형식 오류" 65
+  case "${dirty}" in
+    true) source_state=dirty ;;
+    false) source_state=clean ;;
+    *) fail "앱 작업 트리 상태 형식 오류" 65 ;;
+  esac
+}
+
 kind_for() {
   local requested=${1:-}
   if [[ -n "${requested}" ]]; then
@@ -189,6 +207,7 @@ create_manifest() {
   /usr/bin/plutil -create xml1 "${plist}"
   /usr/bin/plutil -insert schemaVersion -integer 1 "${plist}"
   /usr/bin/plutil -insert package -dictionary "${plist}"
+  /usr/bin/plutil -insert source -dictionary "${plist}"
   /usr/bin/plutil -insert artifacts -dictionary "${plist}"
   /usr/bin/plutil -insert requirements -dictionary "${plist}"
   /usr/bin/plutil -insert packageScripts -dictionary "${plist}"
@@ -211,6 +230,10 @@ create_manifest() {
   add_string "${plist}" package.version "${version_value}"
   add_string "${plist}" package.sha256 "${package_hash}"
   add_string "${plist}" package.signatureStatus "${checked_signature}"
+  add_string "${plist}" package.architecture arm64
+  read_source_identity
+  add_string "${plist}" source.commitSHA "${source_commit}"
+  add_string "${plist}" source.workingTreeState "${source_state}"
 
   add_artifact "${plist}" runtinue \
     "usr/local/bin/runtinue" "/usr/local/bin/runtinue"
@@ -348,6 +371,14 @@ verify_manifest() {
     "${script_dir}/verify-package-payload.sh" "${pkg}" >/dev/null
   fi
 
+  read_source_identity
+  if [[ "${rollback}" != YES ]] || /usr/bin/plutil -extract source xml1 -o /dev/null "${manifest}" >/dev/null 2>&1; then
+    [[ "$(manifest_value source.commitSHA "${manifest}")" == "${source_commit}" && \
+      "$(manifest_value source.workingTreeState "${manifest}")" == "${source_state}" && \
+      "$(manifest_value package.architecture "${manifest}")" == arm64 ]] || \
+      fail "manifest의 소스 식별자 또는 아키텍처가 payload와 다름" 65
+  fi
+
   local key payload_path file expected_path expected_payload expected_installed expected_build_id supervisor_hash
   local -a artifact_keys=(
     runtinue runtinueHook runtinueActivity runtinueHelper runtinueSupervisor runtinueMenubar
@@ -464,6 +495,19 @@ publish_pointer() {
   if [[ "${pointer_kind}" == release && "${pointer_signature_status}" != "signed-notarized" ]]; then
     fail "notarization 검증 전에는 release pointer를 publish하지 않음" 77
   fi
+  local validation_record="${RUNTINUE_VALIDATION_RECORD:-}"
+  if [[ "${pointer_kind}" == release ]]; then
+    local release_version current_commit
+    release_version=$(/bin/zsh "${script_dir}/version.sh" --release)
+    current_commit=$(/usr/bin/git -C "${script_dir:h}" rev-parse HEAD)
+    [[ "$(manifest_value package.version "${manifest}")" == "${release_version}" && \
+      "$(manifest_value source.commitSHA "${manifest}")" == "${current_commit}" && \
+      "$(manifest_value source.workingTreeState "${manifest}")" == clean ]] || \
+      fail "release 후보가 현재 태그의 깨끗한 소스에서 빌드되지 않았습니다" 65
+    [[ -n "${validation_record}" ]] || \
+      fail "공증 후보 생성 완료. RUNTINUE_VALIDATION_RECORD에 실기기 기록을 지정하기 전에는 배포하지 않습니다" 78
+    /bin/zsh "${script_dir}/hardware-validation.sh" verify "${manifest}" "${validation_record}"
+  fi
 
   local work_root pointer_plist tmp manifest_hash package_hash
   work_root=$(/usr/bin/mktemp -d /tmp/runtinue-release-pointer.XXXXXX)
@@ -479,6 +523,10 @@ publish_pointer() {
   /usr/bin/plutil -insert manifestSha256 -string "${manifest_hash}" "${pointer_plist}"
   /usr/bin/plutil -insert manifestPath -string "${manifest:A}" "${pointer_plist}"
   /usr/bin/plutil -insert packagePath -string "${pkg:A}" "${pointer_plist}"
+  if [[ "${pointer_kind}" == release ]]; then
+    /usr/bin/plutil -insert validationPath -string "${validation_record:A}" "${pointer_plist}"
+    /usr/bin/plutil -insert validationSha256 -string "$(sha256 "${validation_record}")" "${pointer_plist}"
+  fi
   /usr/bin/plutil -convert json -r -o "${work_root}/pointer.json" "${pointer_plist}"
   valid_json "${work_root}/pointer.json" || fail "생성된 pointer JSON이 올바르지 않음" 65
 

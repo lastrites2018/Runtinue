@@ -7,7 +7,7 @@ final class CommuteTripEngineTests: XCTestCase {
     var engine = CommuteTripEngine()
     let start = instant(seconds: 100)
     let sessionID = UUID()
-    let request = CommuteTripRequest(expectedHotspotSSID: "iPhone")
+    let request = CommuteTripRequest(expectedHotspotSSID: "iPhone", allowAlreadyConnected: true)
     try engine.arm(
       request,
       originNetwork: network(ssid: "iPhone", at: start),
@@ -30,7 +30,7 @@ final class CommuteTripEngineTests: XCTestCase {
       var engine = CommuteTripEngine()
       let start = instant(seconds: 100)
       try engine.arm(
-        CommuteTripRequest(expectedHotspotSSID: "iPhone"),
+        CommuteTripRequest(expectedHotspotSSID: "iPhone", allowAlreadyConnected: true),
         originNetwork: network(ssid: "iPhone", at: start),
         device: device(at: start),
         at: start
@@ -54,7 +54,7 @@ final class CommuteTripEngineTests: XCTestCase {
     var engine = CommuteTripEngine()
     let start = instant(seconds: 100)
     try engine.arm(
-      CommuteTripRequest(expectedHotspotSSID: "iPhone"),
+      CommuteTripRequest(expectedHotspotSSID: "iPhone", allowAlreadyConnected: true),
       originNetwork: network(ssid: "iPhone", at: start),
       device: device(at: start, thermal: .fair, lid: .closed),
       at: start
@@ -68,19 +68,36 @@ final class CommuteTripEngineTests: XCTestCase {
     )
   }
 
-  func testUnchangedUSBTetheringInterfaceStillWaits() throws {
+  func testAlreadyConnectedHotspotWaitsWithoutExplicitConfirmation() throws {
     var engine = CommuteTripEngine()
     let start = instant(seconds: 100)
-    let connected = network(ssid: nil, at: start, interface: "en5")
+    let connected = network(ssid: "iPhone", at: start)
     try engine.arm(
-      CommuteTripRequest(networkTarget: .usbTethering),
+      CommuteTripRequest(expectedHotspotSSID: "iPhone"),
       originNetwork: connected,
       device: device(at: start),
       at: start
     )
 
     XCTAssertTrue(engine.observeNetwork(connected, at: start).isEmpty)
+    XCTAssertEqual(engine.phase, .waitingForHotspot)
     XCTAssertEqual(engine.status.hotspotWaitingReason, .networkIdentityUnchanged)
+  }
+
+  func testUnchangedUSBTetheringInterfaceStillWaits() throws {
+    for allowAlreadyConnected in [false, true] {
+      var engine = CommuteTripEngine()
+      let start = instant(seconds: 100)
+      let connected = network(ssid: nil, at: start, interface: "en5")
+      let request = CommuteTripRequest(
+        networkTarget: .usbTethering, allowAlreadyConnected: allowAlreadyConnected
+      )
+      XCTAssertFalse(request.allowAlreadyConnected)
+      try engine.arm(request, originNetwork: connected, device: device(at: start), at: start)
+
+      XCTAssertTrue(engine.observeNetwork(connected, at: start).isEmpty)
+      XCTAssertEqual(engine.status.hotspotWaitingReason, .networkIdentityUnchanged)
+    }
   }
 
   func testHotspotHandoffAcquiresThenThermalTripReleases() throws {

@@ -6,6 +6,116 @@ import XCTest
 
 @MainActor
 final class LeaseActorTests: XCTestCase {
+  func testActiveTickReassertsAnExternallyClearedOverrideWithoutRenewingDeadlines() async {
+    let power = FakePowerBackend()
+    let actor = makeActor(power: power, store: FakeLeaseStore())
+    _ = await actor.start()
+    _ = await actor.acquire(request())
+    let before = await actor.status()
+    await power.simulateExternalChange(.normal)
+
+    let after = await actor.tick()
+    let observed = await power.snapshot()
+    XCTAssertEqual(after.phase, .active)
+    XCTAssertEqual(observed.writes, [.disabled, .disabled])
+    XCTAssertEqual(after.ttlDeadline, before.ttlDeadline)
+    XCTAssertEqual(after.hardDeadline, before.hardDeadline)
+  }
+
+  func testActiveTickDoesNotWriteWhenOverrideIsIntact() async {
+    let power = FakePowerBackend()
+    let actor = makeActor(power: power, store: FakeLeaseStore())
+    _ = await actor.start()
+    _ = await actor.acquire(request())
+    _ = await actor.tick()
+    _ = await actor.tick()
+    let observed = await power.snapshot()
+    XCTAssertEqual(observed.writes, [.disabled])
+  }
+
+  func testFailedReassertionEntersRecoveryAndRetriesNormalSleep() async {
+    let clock = ManualHelperClock()
+    let power = FakePowerBackend(
+      writeBehaviors: [.succeed, .failWithoutChanging, .failWithoutChanging, .succeed]
+    )
+    let store = FakeLeaseStore()
+    let actor = makeActor(power: power, store: store, clock: clock)
+    _ = await actor.start()
+    _ = await actor.acquire(request())
+    await power.simulateExternalChange(.normal)
+
+    let pending = await actor.tick()
+    let pendingStore = await store.snapshot()
+    XCTAssertEqual(pending.phase, .recoveryPending)
+    XCTAssertEqual(pendingStore.current?.phase, .recoveryPending)
+    clock.advance(seconds: 1)
+    let recovered = await actor.tick()
+    let observed = await power.snapshot()
+    XCTAssertEqual(recovered.phase, .idle)
+    XCTAssertEqual(observed.writes, [.disabled, .disabled, .normal, .normal])
+  }
+
+  func testRenewAfterElapsedTTLReleasesInsteadOfResurrectingLease() async {
+    let clock = ManualHelperClock()
+    let power = FakePowerBackend()
+    let actor = makeActor(power: power, store: FakeLeaseStore(), clock: clock)
+    let leaseID = UUID()
+    _ = await actor.start()
+    _ = await actor.acquire(request(leaseID: leaseID, ttl: .seconds(30), hardCap: .seconds(300)))
+    // Simulate elapsed continuous time while the watchdog could not execute.
+    clock.advanceMonotonic(seconds: 31)
+    let result = await actor.renew(leaseID: leaseID, ownerUID: 501, ttl: .seconds(90))
+    guard case .success(let status) = result else {
+      return XCTFail("expected verified release, got \(result)")
+    }
+    XCTAssertEqual(status.phase, .idle)
+    let observed = await power.snapshot()
+    XCTAssertEqual(observed.writes, [.disabled, .normal])
+  }
+
+  func testRenewCannotExtendATTLThatExpiresDuringThePowerWrite() async {
+    let clock = ManualHelperClock()
+    let power = FakePowerBackend()
+    let actor = makeActor(power: power, store: FakeLeaseStore(), clock: clock)
+    let leaseID = UUID()
+    _ = await actor.start()
+    _ = await actor.acquire(request(leaseID: leaseID, ttl: .seconds(30), hardCap: .seconds(300)))
+    await power.onNextWrite { clock.advanceMonotonic(seconds: 30) }
+
+    let result = await actor.renew(leaseID: leaseID, ownerUID: 501, ttl: .seconds(90))
+    guard case .success(let status) = result else { return XCTFail("expected verified release") }
+    XCTAssertEqual(status.phase, .idle)
+    let observed = await power.snapshot()
+    XCTAssertEqual(observed.writes, [.disabled, .disabled, .normal])
+  }
+
+  func testAcquisitionThatOutlivesItsDeadlineRestoresNormalSleep() async {
+    let clock = ManualHelperClock()
+    let power = FakePowerBackend()
+    let actor = makeActor(power: power, store: FakeLeaseStore(), clock: clock)
+    _ = await actor.start()
+    await power.onNextWrite { clock.advanceMonotonic(seconds: 90) }
+
+    let result = await actor.acquire(request())
+    guard case .success(let status) = result else { return XCTFail("expected verified release") }
+    XCTAssertEqual(status.phase, .idle)
+    let observed = await power.snapshot()
+    XCTAssertEqual(observed.writes, [.disabled, .normal])
+  }
+
+  func testUnavailableActiveReadRecoversWithoutReassertingTheOverride() async {
+    let power = FakePowerBackend()
+    let actor = makeActor(power: power, store: FakeLeaseStore())
+    _ = await actor.start()
+    _ = await actor.acquire(request())
+    await power.setForcedRead(.unavailable("fixture sensor failure"))
+
+    let status = await actor.tick()
+    XCTAssertNotEqual(status.phase, .active)
+    let observed = await power.snapshot()
+    XCTAssertEqual(observed.writes, [.disabled, .normal])
+  }
+
   func testAcquirePersistsBeforeEnablingSleepOverride() async {
     let recorder = EventRecorder()
     let power = FakePowerBackend(recorder: recorder)
@@ -534,6 +644,7 @@ private actor FakePowerBackend: SleepPowerBackend {
   private var writeBehaviors: [FakeWriteBehavior]
   private var readResults: [ObservedSleepOverride]
   private var forcedRead: ObservedSleepOverride?
+  private var nextWriteAction: (@Sendable () -> Void)?
   private let recorder: EventRecorder?
 
   init(
@@ -560,6 +671,9 @@ private actor FakePowerBackend: SleepPowerBackend {
   }
 
   func writeAndVerify(_ state: SleepOverrideState) async throws {
+    let action = nextWriteAction
+    nextWriteAction = nil
+    action?()
     writes.append(state)
     await recorder?.record("write:\(state.rawValue)")
     let behavior = writeBehaviors.isEmpty ? .succeed : writeBehaviors.removeFirst()
@@ -580,6 +694,14 @@ private actor FakePowerBackend: SleepPowerBackend {
 
   func setForcedRead(_ observed: ObservedSleepOverride?) {
     forcedRead = observed
+  }
+
+  func simulateExternalChange(_ state: SleepOverrideState) {
+    self.state = state
+  }
+
+  func onNextWrite(_ action: @escaping @Sendable () -> Void) {
+    nextWriteAction = action
   }
 }
 
@@ -674,7 +796,7 @@ private final class ManualHelperClock: @unchecked Sendable, MonotonicTimeSource,
   func now() -> MonotonicInstant {
     lock.lock()
     defer { lock.unlock() }
-    return MonotonicInstant(uptimeNanoseconds: monotonicNanoseconds)
+    return MonotonicInstant(continuousNanoseconds: monotonicNanoseconds)
   }
 
   func now() -> Date {

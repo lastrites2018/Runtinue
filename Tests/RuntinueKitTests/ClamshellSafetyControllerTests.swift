@@ -21,7 +21,8 @@ final class ClamshellSafetyControllerTests: XCTestCase {
       SessionRequest(
         mode: .trip(
           expectedHotspotSSID: "iPhone",
-          handoffTimeout: .seconds(600)
+          handoffTimeout: .seconds(600),
+          alreadyConnected: true
         ),
         hardCap: .seconds(3_600)
       )
@@ -37,7 +38,8 @@ final class ClamshellSafetyControllerTests: XCTestCase {
           ssid: "iPhone",
           handoffTimeoutSeconds: 600,
           hardCapSeconds: 3_600,
-          safetyProfile: .bagSafe
+          safetyProfile: .bagSafe,
+          alreadyConnected: true
         )
       ]
     )
@@ -252,7 +254,8 @@ private enum FakeCall: Equatable, Sendable {
     ssid: String?,
     handoffTimeoutSeconds: Double,
     hardCapSeconds: Double,
-    safetyProfile: WireSafetyProfile
+    safetyProfile: WireSafetyProfile,
+    alreadyConnected: Bool = false
   )
   case status
   case stop(UUID?)
@@ -290,7 +293,8 @@ private actor FakeSupervisorControlClient: SupervisorControlClient {
         ssid: request.expectedHotspotSSID,
         handoffTimeoutSeconds: request.hotspotHandoffTimeoutSeconds,
         hardCapSeconds: request.hardCapSeconds,
-        safetyProfile: request.safetyProfile
+        safetyProfile: request.safetyProfile,
+        alreadyConnected: request.allowAlreadyConnected
       )
     )
     return response

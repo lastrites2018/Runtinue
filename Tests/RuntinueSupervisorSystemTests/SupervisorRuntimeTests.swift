@@ -10,6 +10,80 @@ import XCTest
 
 @MainActor
 final class SupervisorRuntimeTests: XCTestCase {
+  func testSafetyReleaseDoesNotWaitForLidConflictEventPersistence() async throws {
+    let clock = RuntimeManualClock()
+    let backend = RuntimeFakeBackend(clock: clock)
+    let sink = RuntimeBlockingLidEventSink()
+    let runtime = SupervisorRuntime(
+      backend: backend,
+      sampler: RuntimeFakeSampler(snapshots: [
+        runtimeSnapshot(ssid: "Office", clock: clock),
+        runtimeSnapshot(ssid: "iPhone", clock: clock),
+        runtimeSnapshot(
+          ssid: "iPhone", clock: clock, thermal: .fair, lid: .closed, lidConflict: true
+        ),
+      ]),
+      statusCache: RuntimeFakeCache(),
+      eventRecorder: SupervisorEventRecorder(sink: sink, buildID: nil),
+      ownerUID: 501, clock: clock, automaticMonitoring: false
+    )
+    await runtime.recordWiFiObservation(ssid: "Office", interfaceName: "en0")
+    _ = try await runtime.startTrip(
+      expectedHotspotSSID: "iPhone", hotspotHandoffTimeout: .seconds(900),
+      hardCap: .seconds(3_600)
+    )
+    await runtime.recordWiFiObservation(ssid: "iPhone", interfaceName: "en0")
+    let active = await runtime.monitorOnce()
+    XCTAssertEqual(active.verdict, .protected)
+
+    let monitoring = Task { await runtime.monitorOnce() }
+    for _ in 0..<1_000 {
+      if await sink.isBlocked { break }
+      await Task.yield()
+    }
+    let blocked = await sink.isBlocked
+    let beforeLogCompletion = await backend.snapshot()
+    await sink.unblock()
+    let stopped = await monitoring.value
+    let afterLogCompletion = await backend.snapshot()
+
+    XCTAssertTrue(blocked, "fault injection must suspend the diagnostic write")
+    XCTAssertEqual(
+      beforeLogCompletion.releaseCount, 1,
+      "unsafe closed-lid thermal sample must release before diagnostic I/O completes"
+    )
+    XCTAssertEqual(stopped.phase, .ended)
+    XCTAssertEqual(afterLogCompletion.releaseCount, 1)
+  }
+
+  func testLidConflictRecordsOneEventPerDisagreementEpisode() async throws {
+    let clock = RuntimeManualClock()
+    let backend = RuntimeFakeBackend(clock: clock)
+    let events = RuntimeFakeEventSink()
+    let runtime = SupervisorRuntime(
+      backend: backend,
+      sampler: RuntimeFakeSampler(snapshots: [
+        runtimeSnapshot(ssid: "Office", clock: clock, lidConflict: true),
+        runtimeSnapshot(ssid: "iPhone", clock: clock, lidConflict: true),
+        runtimeSnapshot(ssid: "iPhone", clock: clock),
+        runtimeSnapshot(ssid: "iPhone", clock: clock, lidConflict: true),
+      ]),
+      statusCache: RuntimeFakeCache(),
+      eventRecorder: SupervisorEventRecorder(sink: events, buildID: nil),
+      ownerUID: 501, clock: clock, automaticMonitoring: false
+    )
+    await runtime.recordWiFiObservation(ssid: "Office", interfaceName: "en0")
+    _ = try await runtime.startTrip(
+      expectedHotspotSSID: "iPhone", hotspotHandoffTimeout: .seconds(900), hardCap: .seconds(3_600)
+    )
+    await runtime.recordWiFiObservation(ssid: "iPhone", interfaceName: "en0")
+    _ = await runtime.monitorOnce()
+    _ = await runtime.monitorOnce()
+    _ = await runtime.monitorOnce()
+    let recorded = await events.snapshot()
+    XCTAssertEqual(recorded.filter { $0.kind == .lidStateConflict }.count, 2)
+  }
+
   func testObservationStorageFailuresRemainVisibleWithoutBlockingPowerRelease() async throws {
     let clock = RuntimeManualClock()
     let backend = RuntimeFakeBackend(clock: clock)
@@ -867,6 +941,30 @@ private actor RuntimeFakeCache: SupervisorStatusCaching {
   }
 }
 
+private actor RuntimeFakeEventSink: SupervisorEventRecording {
+  private var events: [SupervisorEvent] = []
+  func record(_ event: SupervisorEvent) { events.append(event) }
+  func snapshot() -> [SupervisorEvent] { events }
+}
+
+private actor RuntimeBlockingLidEventSink: SupervisorEventRecording {
+  private var resumed = false
+  private var continuation: CheckedContinuation<Void, Never>?
+  private(set) var isBlocked = false
+
+  func record(_ event: SupervisorEvent) async {
+    guard event.kind == .lidStateConflict, !resumed else { return }
+    isBlocked = true
+    await withCheckedContinuation { continuation = $0 }
+  }
+
+  func unblock() {
+    resumed = true
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
 private actor RuntimeFailedObservationStores:
   SupervisorStatusCaching, SupervisorHistoryRecording, SupervisorEventRecording
 {
@@ -938,7 +1036,7 @@ private final class RuntimeManualClock: @unchecked Sendable, MonotonicTimeSource
   func now() -> MonotonicInstant {
     lock.lock()
     defer { lock.unlock() }
-    return MonotonicInstant(uptimeNanoseconds: nanoseconds)
+    return MonotonicInstant(continuousNanoseconds: nanoseconds)
   }
 
   func advance(seconds: UInt64) {
@@ -953,7 +1051,8 @@ private func runtimeSnapshot(
   interface: String = "en0",
   clock: RuntimeManualClock,
   thermal: ThermalLevel = .nominal,
-  lid: LidState = .open
+  lid: LidState = .open,
+  lidConflict: Bool = false
 ) -> (network: NetworkSnapshot, device: DeviceSafetySnapshot) {
   (
     NetworkSnapshot(
@@ -970,6 +1069,7 @@ private func runtimeSnapshot(
       lidState: lid,
       externalDisplayState: .absent,
       lowPowerModeEnabled: false,
+      lidSignalsDisagree: lidConflict,
       capturedAt: clock.now()
     )
   )

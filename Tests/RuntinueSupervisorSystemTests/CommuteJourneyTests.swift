@@ -30,7 +30,8 @@ final class CommuteJourneyTests: XCTestCase {
     _ = try await runtime.startTrip(
       expectedHotspotSSID: "iPhone",
       hotspotHandoffTimeout: .seconds(900),
-      hardCap: .seconds(3_600)
+      hardCap: .seconds(3_600),
+      allowAlreadyConnected: true
     )
     let status = await runtime.monitorOnce()
 
@@ -530,7 +531,7 @@ private final class JourneyClock: @unchecked Sendable, MonotonicTimeSource,
   func now() -> MonotonicInstant {
     lock.lock()
     defer { lock.unlock() }
-    return MonotonicInstant(uptimeNanoseconds: nanoseconds)
+    return MonotonicInstant(continuousNanoseconds: nanoseconds)
   }
 
   func now() -> Date {

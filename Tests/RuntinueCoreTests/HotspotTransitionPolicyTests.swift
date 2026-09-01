@@ -124,7 +124,7 @@ final class HotspotTransitionPolicyTests: XCTestCase {
   }
 
   func testUnknownOriginIdentityDoesNotCountAsHandoff() {
-    let now = MonotonicInstant(uptimeNanoseconds: 100)
+    let now = MonotonicInstant(continuousNanoseconds: 100)
     let policy = HotspotTransitionPolicy(expectedSSID: "iPhone")
     let origin = NetworkSnapshot(
       ssid: nil,
@@ -189,7 +189,7 @@ final class HotspotTransitionPolicyTests: XCTestCase {
   }
 
   func testUSBTetheringRequiresKnownOriginInterface() {
-    let now = MonotonicInstant(uptimeNanoseconds: 100)
+    let now = MonotonicInstant(continuousNanoseconds: 100)
     let policy = HotspotTransitionPolicy(target: .usbTethering)
     let origin = NetworkSnapshot(
       ssid: nil,

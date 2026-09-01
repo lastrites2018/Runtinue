@@ -10,17 +10,20 @@ public actor XPCPrivilegedLeaseBackend: SupervisorLeaseBackend {
   private let requestTimeout: TimeInterval
   private let ownerUID: UInt32
   private let eventRecorder: SupervisorEventRecorder?
+  private let clock: any MonotonicTimeSource
 
   public init(
     machServiceName: String = RuntinueIPCContract.helperMachServiceName,
     requestTimeout: TimeInterval = 10,
     ownerUID: UInt32 = getuid(),
-    eventRecorder: SupervisorEventRecorder? = nil
+    eventRecorder: SupervisorEventRecorder? = nil,
+    clock: any MonotonicTimeSource = SystemContinuousClock()
   ) {
     self.machServiceName = machServiceName
     self.requestTimeout = requestTimeout
     self.ownerUID = ownerUID
     self.eventRecorder = eventRecorder
+    self.clock = clock
   }
 
   public func acquire(
@@ -53,6 +56,10 @@ public actor XPCPrivilegedLeaseBackend: SupervisorLeaseBackend {
     )
     switch response.outcome {
     case .success:
+      guard Self.confirmsActiveLease(response, leaseID: sessionID, ownerUID: ownerUID, at: clock.now()) else {
+        await eventRecorder?.record(.recoveryPending, attemptID: attemptID, sessionID: sessionID)
+        return .recoveryPending("helper acquisition did not confirm the owned active lease")
+      }
       await eventRecorder?.record(.leaseAcquireAccepted, attemptID: attemptID, sessionID: sessionID)
       return .acquired(LeaseToken(id: sessionID))
     case .recoveryPending:
@@ -124,6 +131,23 @@ public actor XPCPrivilegedLeaseBackend: SupervisorLeaseBackend {
       && response.status?.ownerUID == nil
   }
 
+  static func confirmsActiveLease(
+    _ response: HelperMutationWireResponse,
+    leaseID: UUID,
+    ownerUID: UInt32,
+    at now: MonotonicInstant
+  ) -> Bool {
+    guard response.protocolVersion == RuntinueIPCContract.protocolVersion,
+      response.outcome == .success, response.rejection == nil,
+      let status = response.status,
+      status.phase == .active, status.sleepOverride == .disabled,
+      status.leaseID == leaseID, status.ownerUID == ownerUID,
+      let ttl = status.ttlDeadlineContinuousNanoseconds,
+      let hard = status.hardDeadlineContinuousNanoseconds
+    else { return false }
+    return now.continuousNanoseconds < ttl && ttl <= hard
+  }
+
   public func renew(
     leaseID: UUID,
     ttl: Duration
@@ -144,8 +168,11 @@ public actor XPCPrivilegedLeaseBackend: SupervisorLeaseBackend {
 
     switch response.outcome {
     case .success:
-      guard let status = response.status else {
-        return .rejected("helper renewal omitted status")
+      guard Self.confirmsActiveLease(response, leaseID: leaseID, ownerUID: ownerUID, at: clock.now()),
+        let status = response.status
+      else {
+        await eventRecorder?.record(.heartbeatFailed, sessionID: leaseID)
+        return .rejected("helper renewal did not confirm the owned active lease")
       }
       return .renewed(makeObservation(status))
     case .recoveryPending, .rejected, .invalidRequest:
@@ -246,7 +273,7 @@ public actor XPCPrivilegedLeaseBackend: SupervisorLeaseBackend {
       gate.scheduleTimeout(after: requestTimeout)
     }
 
-    guard let responseData else {
+    guard let responseData, responseData.count <= RuntinueIPCContract.maximumRequestBytes else {
       return nil
     }
     return try? JSONDecoder().decode(
@@ -264,11 +291,11 @@ public actor XPCPrivilegedLeaseBackend: SupervisorLeaseBackend {
       ownerUID: status.ownerUID,
       sleepOverride: SupervisorSleepOverride(rawValue: status.sleepOverride.rawValue)
         ?? .unavailable,
-      ttlDeadline: status.ttlDeadlineUptimeNanoseconds.map {
-        MonotonicInstant(uptimeNanoseconds: $0)
+      ttlDeadline: status.ttlDeadlineContinuousNanoseconds.map {
+        MonotonicInstant(continuousNanoseconds: $0)
       },
-      hardDeadline: status.hardDeadlineUptimeNanoseconds.map {
-        MonotonicInstant(uptimeNanoseconds: $0)
+      hardDeadline: status.hardDeadlineContinuousNanoseconds.map {
+        MonotonicInstant(continuousNanoseconds: $0)
       },
       detail: status.detail
     )
