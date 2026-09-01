@@ -369,6 +369,24 @@ final class MenuBarModelsTests: XCTestCase {
     )
   }
 
+  func testCriticalWarningRecognizesStartupRecoveryWithoutSessionOrMode() {
+    let startupRecovery = status(
+      verdict: .recoveryPending,
+      closedLidAllowed: false,
+      phase: .recoveryPending,
+      mode: .none,
+      sessionID: nil
+    )
+
+    XCTAssertTrue(
+      MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+        currentStatus: startupRecovery,
+        lastKnownStatus: nil,
+        sleepOverrideUnavailable: true
+      )
+    )
+  }
+
   func testObservationIssueIsPresentedWithoutChangingProtectionVerdict() {
     let presentation = MenuBarPresentation(
       status: status(

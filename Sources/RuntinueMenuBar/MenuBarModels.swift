@@ -227,7 +227,12 @@ enum MenuBarCriticalWarningPolicy {
   ) -> Bool {
     guard sleepOverrideUnavailable else { return false }
     guard let responsibility = currentStatus ?? lastKnownStatus else { return false }
-    guard responsibility.sessionID != nil || responsibility.mode != .none else { return false }
+    let hasProtectionResponsibility =
+      responsibility.sessionID != nil
+      || responsibility.mode != .none
+      || responsibility.phase == .recoveryPending
+      || responsibility.verdict == .recoveryPending
+    guard hasProtectionResponsibility else { return false }
 
     let activeOrRecovering =
       [.active, .releasingLease, .recoveryPending].contains(responsibility.phase)
