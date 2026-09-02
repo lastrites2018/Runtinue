@@ -18,10 +18,11 @@ fail() {
   exit 1
 }
 
-# 허용 목록을 넓혀도 README 외 문서와 로컬 자료의 제외 계약은 유지합니다.
+# 허용 목록을 넓혀도 루트 README.md와 AGENTS.md 외 문서와 로컬 자료는 제외합니다.
 printf '%s\0' \
   'notes.md' 'README.MD' 'nested/README.md' 'Sources/notes.Md' \
-  'docs/private.swift' 'AGENTS.md' '.env' '.release/output.swift' \
+  'docs/private.swift' 'AGENTS.MD' 'agents.md' 'nested/AGENTS.md' \
+  '.env' '.release/output.swift' \
   'private.log' 'private.jsonl' 'private.pdf' 'private.txt' \
   'private.docx' 'private.png' 'private.p12' 'Sources/private.json' \
   > "$runtinue_check_dir/blocked-probes"
@@ -47,7 +48,7 @@ verify_snapshot() {
 
   check_ignored "$runtinue_check_dir/blocked-probes" "$runtinue_check_dir/probe-result"
   cmp -s "$runtinue_check_dir/blocked-probes" "$runtinue_check_dir/probe-result" \
-    || fail 'README 외 문서와 로컬 자료의 제외 규칙을 유지해야 합니다.'
+    || fail '루트 README.md와 AGENTS.md 외 문서와 로컬 자료의 제외 규칙을 유지해야 합니다.'
 
   : > "$runtinue_check_dir/paths"
   while IFS= read -r -d '' entry; do
