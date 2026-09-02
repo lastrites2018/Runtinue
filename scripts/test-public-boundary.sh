@@ -15,6 +15,7 @@ cp "$project_root/.githooks/pre-commit" "$fixture/.githooks/pre-commit"
 cp "$project_root/.githooks/pre-push" "$fixture/.githooks/pre-push"
 chmod +x "$fixture/.githooks/pre-commit" "$fixture/.githooks/pre-push"
 printf '# Fixture\n' > "$fixture/README.md"
+printf '# Fixture rules\n' > "$fixture/AGENTS.md"
 printf '// Fixture\n' > "$fixture/Sources/Fixture.swift"
 cp "$project_root/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png" \
   "$fixture/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png"
@@ -23,8 +24,9 @@ git -C "$fixture" init --quiet -b main
 git -C "$fixture" config user.name 'Repository Boundary Test'
 git -C "$fixture" config user.email 'boundary-test@example.invalid'
 git -C "$fixture" config commit.gpgsign false
+git -C "$fixture" config core.ignoreCase false
 git -C "$fixture" config core.hooksPath .githooks
-git -C "$fixture" add .gitignore README.md VERSION Sources scripts .githooks Packaging
+git -C "$fixture" add .gitignore AGENTS.md README.md VERSION Sources scripts .githooks Packaging
 
 passed=0
 expect_success() {
@@ -58,7 +60,7 @@ git -C "$fixture" remote add origin "$runtinue_test_dir/remote.git"
 expect_success '정상 로컬 푸시 훅' git -C "$fixture" push --quiet origin main
 
 for path in \
-  'notes.md' 'Notes.MD' 'nested/README.md' 'AGENTS.md' \
+  'notes.md' 'Notes.MD' 'nested/README.md' 'nested/AGENTS.md' \
   'docs/notes.swift' 'notes.txt' 'report.pdf' 'report.docx' 'report.rst' \
   'events.jsonl' '.env' '.release/result.swift' 'Sources/notes.md' \
   'Sources/session.json' '.github/workflows/private.yml' 'image.png' \
