@@ -170,21 +170,18 @@ public struct MacDeviceProbe: Sendable {
     _ primary: ThermalLevel,
     _ supplemental: ThermalLevel
   ) -> ThermalLevel {
-    let primarySeverity = thermalSeverity(primary)
-    let supplementalSeverity = thermalSeverity(supplemental)
-    switch (primarySeverity, supplementalSeverity) {
-    case (.none, .none):
-      .unknown
-    case (.some(_), .none):
-      primary
-    case (.none, .some(_)):
-      supplemental
-    case (.some(let primarySeverity), .some(let supplementalSeverity)):
-      supplementalSeverity > primarySeverity ? supplemental : primary
+    guard primary != .unknown else {
+      return .unknown
     }
+    guard supplemental != .unknown else {
+      return primary
+    }
+    return thermalSeverity(supplemental) > thermalSeverity(primary)
+      ? supplemental
+      : primary
   }
 
-  private static func thermalSeverity(_ level: ThermalLevel) -> Int? {
+  private static func thermalSeverity(_ level: ThermalLevel) -> Int {
     switch level {
     case .nominal:
       0
@@ -195,7 +192,7 @@ public struct MacDeviceProbe: Sendable {
     case .critical:
       3
     case .unknown:
-      nil
+      -1
     }
   }
 
