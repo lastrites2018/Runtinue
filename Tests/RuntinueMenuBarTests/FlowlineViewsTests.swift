@@ -4,18 +4,12 @@ import XCTest
 @testable import RuntinueIPC
 @testable import RuntinueMenuBar
 
-final class FlowlineViewsTests: XCTestCase {
-  func testFlowlineGeometryKeepsTheMeasuredIconProportions() {
-    XCTAssertEqual(
-      RuntinueGeometry.baseStroke,
-      RuntinueGeometry.flowlineHeight * 72 / 916,
-      accuracy: 0.001
-    )
-    XCTAssertEqual(
-      RuntinueGeometry.nodeDiameter / RuntinueGeometry.baseStroke,
-      2.05,
-      accuracy: 0.001
-    )
+final class SafetyChecklistViewsTests: XCTestCase {
+  func testChecklistGeometryFitsTheMenuHeaderGrid() {
+    XCTAssertEqual(SafetyChecklistGeometry.width, 296)
+    XCTAssertEqual(SafetyChecklistGeometry.height, 62)
+    XCTAssertEqual(SafetyChecklistGeometry.iconDiameter, 12)
+    XCTAssertGreaterThan(SafetyChecklistGeometry.itemTop, SafetyChecklistGeometry.titleHeight)
   }
 
   func testBrandPrimaryMatchesTheCurrentAppIconGraphite() async throws {
@@ -24,6 +18,20 @@ final class FlowlineViewsTests: XCTestCase {
       XCTAssertEqual(color.redComponent, 32 / 255, accuracy: 0.001)
       XCTAssertEqual(color.greenComponent, 36 / 255, accuracy: 0.001)
       XCTAssertEqual(color.blueComponent, 44 / 255, accuracy: 0.001)
+    }
+  }
+
+  func testSafetyToneColorsMeetTextContrastOnLightSurface() async throws {
+    try await MainActor.run {
+      let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+      let colors = [
+        RuntinuePalette.verified(for: appearance),
+        RuntinuePalette.attention(for: appearance),
+        RuntinuePalette.stopped(for: appearance),
+      ]
+      for color in colors {
+        XCTAssertGreaterThanOrEqual(contrastRatio(color, against: .white), 4.5)
+      }
     }
   }
 
@@ -51,7 +59,7 @@ final class FlowlineViewsTests: XCTestCase {
     }
   }
 
-  func testHeaderExposesHeadlineGuidanceDetailAndFlowline() async throws {
+  func testHeaderExposesHeadlineGuidanceDetailAndSafetyChecklist() async throws {
     try await MainActor.run {
       let presentation = MenuBarPresentation(
         status: protectedTripStatus(closedLidAllowed: true)
@@ -69,40 +77,44 @@ final class FlowlineViewsTests: XCTestCase {
       let detail = try XCTUnwrap(
         findView(identifier: "runtinue.header.detail", in: header) as? NSTextField
       )
-      let flowline = try XCTUnwrap(
-        findView(identifier: "runtinue.header.flowline", in: header) as? FlowlineRouteView
+      let checklist = try XCTUnwrap(
+        findView(
+          identifier: "runtinue.header.safetyChecklist", in: header
+        ) as? SafetyChecklistView
       )
 
       XCTAssertEqual(headline.stringValue, "보호 중, Trip")
       XCTAssertEqual(guidance.stringValue, "덮개 닫기 가능")
       XCTAssertTrue(detail.stringValue.contains("남은 시간"))
-      XCTAssertFalse(flowline.isHidden)
-      XCTAssertEqual(flowline.presentation?.steps.last?.state, .verified)
-      XCTAssertTrue(flowline.accessibilityLabel()?.contains("보호 검증 완료") == true)
+      XCTAssertFalse(checklist.isHidden)
+      XCTAssertEqual(checklist.presentation?.title, "안전 확인 4개 완료")
+      XCTAssertEqual(checklist.presentation?.items.last?.state, .verified)
+      XCTAssertTrue(checklist.accessibilityLabel()?.contains("수면 보호 적용됨") == true)
       XCTAssertEqual(header.frame.width, 320)
-      XCTAssertEqual(header.frame.height, 142)
+      XCTAssertEqual(header.frame.height, 158)
     }
   }
 
-  func testFlowlineSilhouetteRendersWithoutHorizontalClippingAtBothScales() async throws {
+  func testChecklistRendersWithoutHorizontalClippingAtBothScales() async throws {
     try await MainActor.run {
-      let flowline = FlowlineRouteView()
-      flowline.update(
-        FlowlinePresentation(
-          steps: [
-            FlowlineStep(label: "네트워크", state: .passed),
-            FlowlineStep(label: "인터넷", state: .passed),
-            FlowlineStep(label: "기기", state: .passed),
-            FlowlineStep(label: "보호", state: .verified),
+      let checklist = SafetyChecklistView()
+      checklist.update(
+        SafetyChecklistPresentation(
+          title: "안전 확인 4개 완료",
+          items: [
+            SafetyCheckItem(text: "시작 시 네트워크 확인", state: .passed),
+            SafetyCheckItem(text: "시작 시 인터넷 확인", state: .passed),
+            SafetyCheckItem(text: "기기 상태 안전", state: .passed),
+            SafetyCheckItem(text: "수면 보호 적용됨", state: .verified),
           ]
         ),
         tone: .verified
       )
 
       for appearanceName: NSAppearance.Name in [.aqua, .darkAqua] {
-        flowline.appearance = NSAppearance(named: appearanceName)
+        checklist.appearance = NSAppearance(named: appearanceName)
         for scale in [1, 2] {
-          let bitmap = try render(flowline, scale: scale)
+          let bitmap = try render(checklist, scale: scale)
           var visiblePixels = 0
           var edgePixels = 0
           for y in 0..<bitmap.pixelsHigh {
@@ -118,7 +130,7 @@ final class FlowlineViewsTests: XCTestCase {
           }
 
           let context = "appearance=\(appearanceName.rawValue), scale=\(scale)"
-          XCTAssertGreaterThan(visiblePixels, 200 * scale * scale, context)
+          XCTAssertGreaterThan(visiblePixels, 300 * scale * scale, context)
           XCTAssertLessThan(
             visiblePixels,
             bitmap.pixelsWide * bitmap.pixelsHigh / 2,
@@ -200,4 +212,25 @@ private func render(_ view: NSView, scale: Int) throws -> NSBitmapImageRep {
   }
   NSGraphicsContext.restoreGraphicsState()
   return bitmap
+}
+
+@MainActor
+private func contrastRatio(_ foreground: NSColor, against background: NSColor) -> CGFloat {
+  let foregroundLuminance = relativeLuminance(foreground)
+  let backgroundLuminance = relativeLuminance(background)
+  let lighter = max(foregroundLuminance, backgroundLuminance)
+  let darker = min(foregroundLuminance, backgroundLuminance)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+@MainActor
+private func relativeLuminance(_ color: NSColor) -> CGFloat {
+  guard let color = color.usingColorSpace(.sRGB) else { return 0 }
+  return 0.2126 * linearComponent(color.redComponent)
+    + 0.7152 * linearComponent(color.greenComponent)
+    + 0.0722 * linearComponent(color.blueComponent)
+}
+
+private func linearComponent(_ value: CGFloat) -> CGFloat {
+  value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
 }

@@ -25,6 +25,10 @@ printf '%s\0' \
   '.env' '.release/output.swift' \
   'private.log' 'private.jsonl' 'private.pdf' 'private.txt' \
   'private.docx' 'private.png' 'private.p12' 'Sources/private.json' \
+  'READMEAssets/private.png' 'READMEAssets/private.gif' \
+  'READMEAssets/session.json' \
+  'Packaging/Runtinue.xcassets/private.json' \
+  'Packaging/Runtinue.xcassets/Runtinue.appiconset/private.json' \
   > "$runtinue_check_dir/blocked-probes"
 
 check_ignored() {
@@ -58,6 +62,17 @@ verify_snapshot() {
       100644|100755) ;;
       *)
         printf '심볼릭 링크와 서브모듈은 공개할 수 없습니다: %q\n' "$path" >&2
+        exit 1
+        ;;
+    esac
+    case "$path" in
+      READMEAssets/trip-start.png|READMEAssets/trip-protected.png|READMEAssets/recovery.png) ;;
+      READMEAssets|READMEAssets/*)
+        printf 'README 화면 이미지는 승인된 세 파일만 공개할 수 있습니다: %q\n' "$path" >&2
+        exit 1
+        ;;
+      [Rr][Ee][Aa][Dd][Mm][Ee][Aa][Ss][Ss][Ee][Tt][Ss]|[Rr][Ee][Aa][Dd][Mm][Ee][Aa][Ss][Ss][Ee][Tt][Ss]/*)
+        printf 'README 화면 이미지 경로는 READMEAssets의 정확한 대소문자를 사용해야 합니다: %q\n' "$path" >&2
         exit 1
         ;;
     esac

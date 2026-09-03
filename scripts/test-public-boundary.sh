@@ -7,7 +7,9 @@ runtinue_test_dir=$(mktemp -d "${TMPDIR:-/tmp}/runtinue-public-test.XXXXXX")
 trap 'rm -rf -- "$runtinue_test_dir"' EXIT
 fixture="$runtinue_test_dir/fixture"
 mkdir -p "$fixture/scripts" "$fixture/.githooks" \
-  "$fixture/Sources/RuntinueMenuBar/Resources" "$fixture/Packaging"
+  "$fixture/READMEAssets" \
+  "$fixture/Sources/RuntinueMenuBar/Resources" \
+  "$fixture/Packaging/Runtinue.xcassets/Runtinue.appiconset"
 cp "$project_root/.gitignore" "$fixture/.gitignore"
 cp "$project_root/VERSION" "$fixture/VERSION"
 cp "$script_dir/verify-public-tree.sh" "$fixture/scripts/verify-public-tree.sh"
@@ -17,16 +19,25 @@ chmod +x "$fixture/.githooks/pre-commit" "$fixture/.githooks/pre-push"
 printf '# Fixture\n' > "$fixture/README.md"
 printf '# Fixture rules\n' > "$fixture/AGENTS.md"
 printf '// Fixture\n' > "$fixture/Sources/Fixture.swift"
+cp "$project_root/READMEAssets/trip-start.png" "$fixture/READMEAssets/trip-start.png"
+cp "$project_root/READMEAssets/trip-protected.png" \
+  "$fixture/READMEAssets/trip-protected.png"
+cp "$project_root/READMEAssets/recovery.png" "$fixture/READMEAssets/recovery.png"
 cp "$project_root/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png" \
   "$fixture/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png"
 cp "$project_root/Packaging/RuntinueIcon.png" "$fixture/Packaging/RuntinueIcon.png"
+cp "$project_root/Packaging/Runtinue.xcassets/Contents.json" \
+  "$fixture/Packaging/Runtinue.xcassets/Contents.json"
+cp "$project_root/Packaging/Runtinue.xcassets/Runtinue.appiconset/Contents.json" \
+  "$fixture/Packaging/Runtinue.xcassets/Runtinue.appiconset/Contents.json"
 git -C "$fixture" init --quiet -b main
 git -C "$fixture" config user.name 'Repository Boundary Test'
 git -C "$fixture" config user.email 'boundary-test@example.invalid'
 git -C "$fixture" config commit.gpgsign false
 git -C "$fixture" config core.ignoreCase false
 git -C "$fixture" config core.hooksPath .githooks
-git -C "$fixture" add .gitignore AGENTS.md README.md VERSION Sources scripts .githooks Packaging
+git -C "$fixture" add \
+  .gitignore AGENTS.md README.md READMEAssets VERSION Sources scripts .githooks Packaging
 
 passed=0
 expect_success() {
@@ -64,7 +75,11 @@ for path in \
   'docs/notes.swift' 'notes.txt' 'report.pdf' 'report.docx' 'report.rst' \
   'events.jsonl' '.env' '.release/result.swift' 'Sources/notes.md' \
   'Sources/session.json' '.github/workflows/private.yml' 'image.png' \
+  'READMEAssets/private.png' 'READMEAssets/private.gif' \
+  'READMEAssets/session.json' \
   'Packaging/notes.png' 'Sources/RuntinueMenuBar/Resources/private.png' \
+  'Packaging/Runtinue.xcassets/private.json' \
+  'Packaging/Runtinue.xcassets/Runtinue.appiconset/private.json' \
   'secret.p12' 'file with spaces.md' $'file\nwith-newline.md'; do
   mkdir -p "$(dirname -- "$fixture/$path")"
   printf '비공개 테스트 자료\n' > "$fixture/$path"
@@ -87,6 +102,27 @@ cp "$project_root/.gitignore" "$fixture/.gitignore"
 git -C "$fixture" add .gitignore
 git -C "$fixture" update-index --force-remove notes.md
 rm -f "$fixture/notes.md"
+
+# .gitignore의 예외를 넓혀도 README 화면 이미지는 승인된 세 파일로 제한합니다.
+printf '추가 이미지\n' > "$fixture/READMEAssets/extra.jpg"
+printf '\n!/READMEAssets/extra.jpg\n' >> "$fixture/.gitignore"
+git -C "$fixture" add .gitignore READMEAssets/extra.jpg
+expect_failure 'README 화면 이미지 허용 목록 확장 차단' check_fixture --staged
+cp "$project_root/.gitignore" "$fixture/.gitignore"
+git -C "$fixture" add .gitignore
+git -C "$fixture" update-index --force-remove READMEAssets/extra.jpg
+rm -f "$fixture/READMEAssets/extra.jpg"
+
+# 대소문자를 구분하는 checkout에서도 READMEAssets의 이름 변형을 허용하지 않습니다.
+case_variant_blob=$(printf '대소문자 변형 이미지\n' | git -C "$fixture" hash-object -w --stdin)
+printf '\n!/ReadmeAssets/extra.png\n' >> "$fixture/.gitignore"
+git -C "$fixture" add .gitignore
+git -C "$fixture" update-index --add --cacheinfo \
+  "100644,$case_variant_blob,ReadmeAssets/extra.png"
+expect_failure 'README 화면 이미지 디렉터리 대소문자 변형 차단' check_fixture --staged
+cp "$project_root/.gitignore" "$fixture/.gitignore"
+git -C "$fixture" add .gitignore
+git -C "$fixture" update-index --force-remove ReadmeAssets/extra.png
 
 ln -s ../README.md "$fixture/Sources/Link.swift"
 git -C "$fixture" add Sources/Link.swift
