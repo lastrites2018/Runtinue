@@ -175,9 +175,9 @@ public struct MacDeviceProbe: Sendable {
     switch (primarySeverity, supplementalSeverity) {
     case (.none, .none):
       .unknown
-    case (.some, .none):
+    case (.some(_), .none):
       primary
-    case (.none, .some):
+    case (.none, .some(_)):
       supplemental
     case (.some(let primarySeverity), .some(let supplementalSeverity)):
       supplementalSeverity > primarySeverity ? supplemental : primary
