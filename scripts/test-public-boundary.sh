@@ -103,6 +103,16 @@ git -C "$fixture" add .gitignore
 git -C "$fixture" update-index --force-remove notes.md
 rm -f "$fixture/notes.md"
 
+# .gitignore의 예외를 넓혀도 README 화면 이미지는 승인된 세 파일로 제한합니다.
+printf '추가 이미지\n' > "$fixture/READMEAssets/extra.jpg"
+printf '\n!/READMEAssets/extra.jpg\n' >> "$fixture/.gitignore"
+git -C "$fixture" add .gitignore READMEAssets/extra.jpg
+expect_failure 'README 화면 이미지 허용 목록 확장 차단' check_fixture --staged
+cp "$project_root/.gitignore" "$fixture/.gitignore"
+git -C "$fixture" add .gitignore
+git -C "$fixture" update-index --force-remove READMEAssets/extra.jpg
+rm -f "$fixture/READMEAssets/extra.jpg"
+
 ln -s ../README.md "$fixture/Sources/Link.swift"
 git -C "$fixture" add Sources/Link.swift
 expect_failure '허용 확장자로 만든 심볼릭 링크 차단' check_fixture --staged

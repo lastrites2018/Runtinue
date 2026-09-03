@@ -65,6 +65,13 @@ verify_snapshot() {
         exit 1
         ;;
     esac
+    case "$path" in
+      READMEAssets/trip-start.png|READMEAssets/trip-protected.png|READMEAssets/recovery.png) ;;
+      READMEAssets/*)
+        printf 'README 화면 이미지는 승인된 세 파일만 공개할 수 있습니다: %q\n' "$path" >&2
+        exit 1
+        ;;
+    esac
     printf '%s\0' "$path" >> "$runtinue_check_dir/paths"
   done < "$runtinue_check_dir/entries"
 
