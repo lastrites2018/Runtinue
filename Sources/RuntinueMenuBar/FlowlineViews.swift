@@ -22,7 +22,34 @@ enum RuntinuePalette {
     progress(for: appearance).withAlphaComponent(0.12)
   }
 
-  static var routeBase: NSColor {
+  static func verified(for appearance: NSAppearance) -> NSColor {
+    switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
+    case .darkAqua:
+      .systemGreen
+    default:
+      NSColor(srgbRed: 0.04, green: 0.43, blue: 0.18, alpha: 1)
+    }
+  }
+
+  static func attention(for appearance: NSAppearance) -> NSColor {
+    switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
+    case .darkAqua:
+      .systemOrange
+    default:
+      NSColor(srgbRed: 0.60, green: 0.29, blue: 0, alpha: 1)
+    }
+  }
+
+  static func stopped(for appearance: NSAppearance) -> NSColor {
+    switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
+    case .darkAqua:
+      .systemRed
+    default:
+      NSColor(srgbRed: 0.71, green: 0.14, blue: 0.09, alpha: 1)
+    }
+  }
+
+  static var subtleOutline: NSColor {
     NSColor.separatorColor.withAlphaComponent(0.72)
   }
 
@@ -33,25 +60,27 @@ enum RuntinuePalette {
     case .progress:
       progress(for: appearance)
     case .verified:
-      .systemGreen
+      verified(for: appearance)
     case .attention:
-      .systemOrange
+      attention(for: appearance)
     case .stopped:
-      .systemRed
+      stopped(for: appearance)
     case .unknown:
       .secondaryLabelColor
     }
   }
 }
 
-enum RuntinueGeometry {
-  // RuntinueTemplate.png의 50% 알파 실루엣을 기준으로 측정했다.
-  // 유효 높이 916px에서 화살표 축은 72px이다.
-  static let sourceSilhouetteHeight: CGFloat = 916
-  static let sourceArrowShaftWidth: CGFloat = 72
-  static let flowlineHeight: CGFloat = 46
-  static let baseStroke = flowlineHeight * sourceArrowShaftWidth / sourceSilhouetteHeight
-  static let nodeDiameter = baseStroke * 2.05
+enum SafetyChecklistGeometry {
+  static let width: CGFloat = 296
+  static let height: CGFloat = 62
+  static let titleHeight: CGFloat = 14
+  static let itemTop: CGFloat = 22
+  static let itemRowHeight: CGFloat = 19
+  static let columnGap: CGFloat = 10
+  static let horizontalInset: CGFloat = 2
+  static let iconDiameter: CGFloat = 12
+  static let iconTextGap: CGFloat = 6
 }
 
 @MainActor
@@ -88,30 +117,33 @@ enum MenuBarStatusVisuals {
 }
 
 @MainActor
-final class FlowlineRouteView: NSView {
-  private(set) var presentation: FlowlinePresentation?
+final class SafetyChecklistView: NSView {
+  private(set) var presentation: SafetyChecklistPresentation?
   private(set) var tone: MenuBarTone = .neutral
 
   override var intrinsicContentSize: NSSize {
-    NSSize(width: 296, height: RuntinueGeometry.flowlineHeight)
+    NSSize(width: SafetyChecklistGeometry.width, height: SafetyChecklistGeometry.height)
   }
 
   override var isFlipped: Bool {
-    false
+    true
   }
 
   override init(frame frameRect: NSRect) {
     super.init(frame: frameRect)
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
-    setAccessibilityIdentifier("runtinue.header.flowline")
+    setAccessibilityIdentifier("runtinue.header.safetyChecklist")
   }
 
   convenience init() {
     self.init(
       frame: NSRect(
         origin: .zero,
-        size: NSSize(width: 296, height: RuntinueGeometry.flowlineHeight)
+        size: NSSize(
+          width: SafetyChecklistGeometry.width,
+          height: SafetyChecklistGeometry.height
+        )
       )
     )
   }
@@ -120,92 +152,117 @@ final class FlowlineRouteView: NSView {
     nil
   }
 
-  func update(_ presentation: FlowlinePresentation?, tone: MenuBarTone) {
+  func update(_ presentation: SafetyChecklistPresentation?, tone: MenuBarTone) {
     self.presentation = presentation
     self.tone = tone
-    let description = presentation?.steps.map {
-      "\($0.label) \(Self.accessibilityDescription(for: $0.state))"
-    }.joined(separator: ", ")
-    setAccessibilityLabel(description.map { "보호 진행 상태, \($0)" })
+    let description = presentation.map {
+      ([$0.title] + $0.items.map(\.text)).joined(separator: ", ")
+    }
+    setAccessibilityLabel(description)
     needsDisplay = true
   }
 
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
-    guard let presentation, !presentation.steps.isEmpty else { return }
+    guard let presentation, !presentation.items.isEmpty else { return }
 
-    let nodePositions = positions(count: presentation.steps.count)
-    let routeY = bounds.height - 14
-    let basePath = NSBezierPath()
-    basePath.move(to: NSPoint(x: nodePositions[0], y: routeY))
-    basePath.line(to: NSPoint(x: nodePositions[nodePositions.count - 1], y: routeY))
-    basePath.lineWidth = RuntinueGeometry.baseStroke
-    basePath.lineCapStyle = .round
-    RuntinuePalette.routeBase.setStroke()
-    basePath.stroke()
-
-    for index in 1..<nodePositions.count {
-      let step = presentation.steps[index]
-      guard step.state != .pending && step.state != .unknown else { continue }
-      let segment = NSBezierPath()
-      segment.move(to: NSPoint(x: nodePositions[index - 1], y: routeY))
-      segment.line(to: NSPoint(x: nodePositions[index], y: routeY))
-      segment.lineWidth = RuntinueGeometry.baseStroke
-      segment.lineCapStyle = .round
-      segmentColor(for: step.state).setStroke()
-      segment.stroke()
-    }
-
-    let labelWidth = max(58, bounds.width / CGFloat(presentation.steps.count))
-    for (index, step) in presentation.steps.enumerated() {
-      let center = NSPoint(x: nodePositions[index], y: routeY)
-      drawNode(step.state, center: center)
-      drawLabel(step.label, centerX: center.x, width: labelWidth)
+    drawTitle(presentation.title)
+    for (item, frame) in zip(presentation.items, itemFrames(count: presentation.items.count)) {
+      drawItem(item, in: frame)
     }
   }
 
-  private func positions(count: Int) -> [CGFloat] {
-    guard count > 1 else { return [bounds.midX] }
-    let inset: CGFloat = count == 2 ? 52 : 26
-    let interval = (bounds.width - (inset * 2)) / CGFloat(count - 1)
-    return (0..<count).map { inset + CGFloat($0) * interval }
-  }
-
-  private func drawLabel(_ label: String, centerX: CGFloat, width: CGFloat) {
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = .center
+  private func drawTitle(_ title: String) {
     let attributes: [NSAttributedString.Key: Any] = [
-      .font: NSFont.systemFont(ofSize: 9.5, weight: .medium),
-      .foregroundColor: NSColor.secondaryLabelColor,
-      .paragraphStyle: paragraph,
+      .font: NSFont.systemFont(ofSize: 10.5, weight: .semibold),
+      .foregroundColor: RuntinuePalette.color(for: tone, appearance: effectiveAppearance),
     ]
-    let originX = min(max(0, centerX - width / 2), bounds.width - width)
-    label.draw(
-      in: NSRect(x: originX, y: 0, width: width, height: 13),
+    title.draw(
+      in: NSRect(
+        x: SafetyChecklistGeometry.horizontalInset,
+        y: 0,
+        width: bounds.width - (SafetyChecklistGeometry.horizontalInset * 2),
+        height: SafetyChecklistGeometry.titleHeight
+      ),
       withAttributes: attributes
     )
   }
 
-  private func drawNode(_ state: FlowlineNodeState, center: NSPoint) {
-    let radius = RuntinueGeometry.nodeDiameter / 2
+  private func itemFrames(count: Int) -> [NSRect] {
+    let contentWidth = bounds.width - (SafetyChecklistGeometry.horizontalInset * 2)
+    if count <= 2 {
+      return (0..<count).map { index in
+        NSRect(
+          x: SafetyChecklistGeometry.horizontalInset,
+          y: SafetyChecklistGeometry.itemTop
+            + CGFloat(index) * SafetyChecklistGeometry.itemRowHeight,
+          width: contentWidth,
+          height: SafetyChecklistGeometry.itemRowHeight
+        )
+      }
+    }
+
+    let columnWidth = (contentWidth - SafetyChecklistGeometry.columnGap) / 2
+    return (0..<count).map { index in
+      let column = index % 2
+      let row = index / 2
+      return NSRect(
+        x: SafetyChecklistGeometry.horizontalInset
+          + CGFloat(column) * (columnWidth + SafetyChecklistGeometry.columnGap),
+        y: SafetyChecklistGeometry.itemTop
+          + CGFloat(row) * SafetyChecklistGeometry.itemRowHeight,
+        width: columnWidth,
+        height: SafetyChecklistGeometry.itemRowHeight
+      )
+    }
+  }
+
+  private func drawItem(_ item: SafetyCheckItem, in frame: NSRect) {
+    let iconFrame = NSRect(
+      x: frame.minX,
+      y: frame.minY + (frame.height - SafetyChecklistGeometry.iconDiameter) / 2,
+      width: SafetyChecklistGeometry.iconDiameter,
+      height: SafetyChecklistGeometry.iconDiameter
+    )
+    drawIcon(item.state, in: iconFrame)
+
+    let textX = iconFrame.maxX + SafetyChecklistGeometry.iconTextGap
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+      .foregroundColor: textColor(for: item.state),
+    ]
+    item.text.draw(
+      in: NSRect(
+        x: textX,
+        y: frame.minY + 1,
+        width: frame.maxX - textX,
+        height: frame.height - 1
+      ),
+      withAttributes: attributes
+    )
+  }
+
+  private func drawIcon(_ state: SafetyCheckState, in frame: NSRect) {
+    let center = NSPoint(x: frame.midX, y: frame.midY)
     let frame = NSRect(
-      x: center.x - radius,
-      y: center.y - radius,
-      width: radius * 2,
-      height: radius * 2
+      x: frame.minX + 0.5,
+      y: frame.minY + 0.5,
+      width: frame.width - 1,
+      height: frame.height - 1
     )
     let circle = NSBezierPath(ovalIn: frame)
-    circle.lineWidth = RuntinueGeometry.baseStroke * 0.42
+    circle.lineWidth = 1.25
 
     switch state {
     case .pending:
       NSColor.controlBackgroundColor.setFill()
-      RuntinuePalette.routeBase.setStroke()
+      RuntinuePalette.subtleOutline.setStroke()
       circle.fill()
       circle.stroke()
     case .current:
       let color = RuntinuePalette.color(for: tone, appearance: effectiveAppearance)
-      let surface = tone == .progress
+      let surface =
+        tone == .progress
         ? RuntinuePalette.brandSurface(for: effectiveAppearance)
         : color.withAlphaComponent(0.12)
       surface.setFill()
@@ -213,13 +270,18 @@ final class FlowlineRouteView: NSView {
       circle.fill()
       circle.stroke()
       color.setFill()
-      let inset = RuntinueGeometry.nodeDiameter * 0.31
+      let inset = frame.width * 0.32
       NSBezierPath(ovalIn: frame.insetBy(dx: inset, dy: inset)).fill()
     case .passed:
-      nodeColor(for: state).setFill()
+      let color =
+        tone == .verified
+        ? RuntinuePalette.verified(for: effectiveAppearance)
+        : RuntinuePalette.progress(for: effectiveAppearance)
+      color.setFill()
       circle.fill()
+      drawCheckmark(center: center)
     case .failed:
-      NSColor.systemRed.setFill()
+      RuntinuePalette.stopped(for: effectiveAppearance).setFill()
       circle.fill()
       drawCross(center: center, color: .white)
     case .unknown:
@@ -229,41 +291,26 @@ final class FlowlineRouteView: NSView {
       circle.stroke()
       drawQuestionMark(center: center)
     case .verified:
-      NSColor.systemGreen.setFill()
+      RuntinuePalette.verified(for: effectiveAppearance).setFill()
       circle.fill()
       drawCheckmark(center: center)
     }
   }
 
-  private func nodeColor(for state: FlowlineNodeState) -> NSColor {
+  private func textColor(for state: SafetyCheckState) -> NSColor {
     switch state {
-    case .failed:
-      .systemRed
-    case .verified:
-      .systemGreen
-    case .passed:
-      RuntinuePalette.progress(for: effectiveAppearance)
-    default:
-      RuntinuePalette.color(for: tone, appearance: effectiveAppearance)
-    }
-  }
-
-  private func segmentColor(for state: FlowlineNodeState) -> NSColor {
-    switch state {
-    case .failed:
-      .systemRed
-    case .current:
-      RuntinuePalette.color(for: tone, appearance: effectiveAppearance)
-    default:
-      RuntinuePalette.progress(for: effectiveAppearance)
+    case .pending, .unknown:
+      .secondaryLabelColor
+    case .current, .passed, .failed, .verified:
+      .labelColor
     }
   }
 
   private func drawCheckmark(center: NSPoint) {
     let path = NSBezierPath()
     path.move(to: NSPoint(x: center.x - 2.2, y: center.y))
-    path.line(to: NSPoint(x: center.x - 0.5, y: center.y - 1.6))
-    path.line(to: NSPoint(x: center.x + 2.5, y: center.y + 2.1))
+    path.line(to: NSPoint(x: center.x - 0.5, y: center.y + 1.6))
+    path.line(to: NSPoint(x: center.x + 2.5, y: center.y - 2.1))
     path.lineWidth = 1.35
     path.lineCapStyle = .round
     path.lineJoinStyle = .round
@@ -291,20 +338,9 @@ final class FlowlineRouteView: NSView {
     let value = "?" as NSString
     let size = value.size(withAttributes: attributes)
     value.draw(
-      at: NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2 - 0.5),
+      at: NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2),
       withAttributes: attributes
     )
-  }
-
-  private static func accessibilityDescription(for state: FlowlineNodeState) -> String {
-    switch state {
-    case .pending: "대기"
-    case .current: "진행 중"
-    case .passed: "통과"
-    case .failed: "실패"
-    case .unknown: "확인 불가"
-    case .verified: "검증 완료"
-    }
   }
 }
 
@@ -315,13 +351,13 @@ final class ProtectionStatusHeaderView: NSView {
   private let headlineLabel = NSTextField(labelWithString: "")
   private let guidanceLabel = NSTextField(labelWithString: "")
   private let detailLabel = NSTextField(labelWithString: "")
-  private let routeView = FlowlineRouteView()
+  private let checklistView = SafetyChecklistView()
   private let contentStack = NSStackView()
 
   override var intrinsicContentSize: NSSize {
     let height: CGFloat
-    if !routeView.isHidden {
-      height = 142
+    if !checklistView.isHidden {
+      height = detailLabel.isHidden ? 130 : 158
     } else if !detailLabel.isHidden {
       height = 92
     } else {
@@ -353,8 +389,8 @@ final class ProtectionStatusHeaderView: NSView {
     )
     detailLabel.stringValue = presentation.detail
     detailLabel.isHidden = presentation.detail.isEmpty
-    routeView.update(presentation.flowline, tone: presentation.tone)
-    routeView.isHidden = presentation.flowline == nil
+    checklistView.update(presentation.safetyChecklist, tone: presentation.tone)
+    checklistView.isHidden = presentation.safetyChecklist == nil
     setAccessibilityLabel(
       [presentation.headline, presentation.guidance, presentation.detail]
         .filter { !$0.isEmpty }
@@ -408,18 +444,18 @@ final class ProtectionStatusHeaderView: NSView {
     contentStack.spacing = 6
     contentStack.addArrangedSubview(topRow)
     contentStack.addArrangedSubview(detailLabel)
-    contentStack.addArrangedSubview(routeView)
+    contentStack.addArrangedSubview(checklistView)
     addSubview(contentStack)
 
     contentStack.translatesAutoresizingMaskIntoConstraints = false
-    routeView.translatesAutoresizingMaskIntoConstraints = false
+    checklistView.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
       contentStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
       contentStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
       contentStack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
       contentStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-      routeView.widthAnchor.constraint(equalToConstant: 296),
-      routeView.heightAnchor.constraint(equalToConstant: RuntinueGeometry.flowlineHeight),
+      checklistView.widthAnchor.constraint(equalToConstant: SafetyChecklistGeometry.width),
+      checklistView.heightAnchor.constraint(equalToConstant: SafetyChecklistGeometry.height),
     ])
   }
 }

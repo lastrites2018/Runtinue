@@ -168,7 +168,7 @@ enum MenuBarTone: Equatable, Sendable {
   case unknown
 }
 
-enum FlowlineNodeState: String, Equatable, Sendable {
+enum SafetyCheckState: String, Equatable, Sendable {
   case pending
   case current
   case passed
@@ -177,45 +177,99 @@ enum FlowlineNodeState: String, Equatable, Sendable {
   case verified
 }
 
-struct FlowlineStep: Equatable, Sendable {
-  let label: String
-  let state: FlowlineNodeState
+struct SafetyCheckItem: Equatable, Sendable {
+  let text: String
+  let state: SafetyCheckState
 }
 
-struct FlowlinePresentation: Equatable, Sendable {
-  let steps: [FlowlineStep]
+struct SafetyChecklistPresentation: Equatable, Sendable {
+  let title: String
+  let items: [SafetyCheckItem]
 
-  static func trip(status: SupervisorStatusWire) -> FlowlinePresentation? {
+  static func trip(status: SupervisorStatusWire) -> SafetyChecklistPresentation? {
     guard status.mode == .trip else { return nil }
 
-    let states: [FlowlineNodeState]
     switch status.verdict {
     case .waitingForHotspot:
-      states = [.current, .pending, .pending, .pending]
+      return SafetyChecklistPresentation(
+        title: "안전 확인 중 0/4",
+        items: [
+          SafetyCheckItem(text: "네트워크 연결 확인 중", state: .current),
+          SafetyCheckItem(text: "인터넷 확인 대기", state: .pending),
+          SafetyCheckItem(text: "기기 상태 확인 대기", state: .pending),
+          SafetyCheckItem(text: "수면 보호 확인 대기", state: .pending),
+        ]
+      )
     case .acquiring:
-      states = [.passed, .passed, .passed, .current]
+      return SafetyChecklistPresentation(
+        title: "안전 확인 중 3/4",
+        items: [
+          SafetyCheckItem(text: "네트워크 연결됨", state: .passed),
+          SafetyCheckItem(text: "인터넷 연결됨", state: .passed),
+          SafetyCheckItem(text: "기기 상태 안전", state: .passed),
+          SafetyCheckItem(text: "수면 보호 확인 중", state: .current),
+        ]
+      )
     case .protected:
-      states = [.passed, .passed, .passed, status.closedLidAllowed ? .verified : .passed]
-    case .releasing, .recoveryPending:
-      return FlowlinePresentation(
-        steps: [
-          FlowlineStep(label: "수면 보호", state: .passed),
-          FlowlineStep(label: "정상 수면", state: .current),
+      return SafetyChecklistPresentation(
+        title: status.closedLidAllowed
+          ? "안전 확인 4개 완료" : "보호 적용, 덮개 닫기 미승인",
+        items: [
+          SafetyCheckItem(text: "네트워크 연결됨", state: .passed),
+          SafetyCheckItem(text: "인터넷 연결됨", state: .passed),
+          SafetyCheckItem(text: "기기 상태 안전", state: .passed),
+          SafetyCheckItem(
+            text: "수면 보호 적용됨",
+            state: status.closedLidAllowed ? .verified : .passed
+          ),
+        ]
+      )
+    case .releasing:
+      return SafetyChecklistPresentation(
+        title: "복구 상태 확인 중",
+        items: [
+          SafetyCheckItem(text: "수면 보호 해제 중", state: .current),
+          SafetyCheckItem(text: "정상 수면 확인 대기", state: .pending),
+        ]
+      )
+    case .recoveryPending:
+      return SafetyChecklistPresentation(
+        title: "복구 상태 확인 필요",
+        items: [
+          SafetyCheckItem(text: "수면 보호 해제 미확인", state: .failed),
+          SafetyCheckItem(text: "정상 수면 확인 재시도 중", state: .current),
         ]
       )
     case .unsafe:
-      states = [.passed, .passed, .passed, .failed]
+      guard status.phase == .ended else {
+        return SafetyChecklistPresentation(
+          title: "안전 중단 처리 중",
+          items: [
+            SafetyCheckItem(text: "기기 안전 기준 벗어남", state: .failed),
+            SafetyCheckItem(text: "정상 수면 복구 준비 중", state: .current),
+          ]
+        )
+      }
+      return SafetyChecklistPresentation(
+        title: "안전 중단 완료",
+        items: [
+          SafetyCheckItem(text: "기기 안전 기준 벗어남", state: .failed),
+          SafetyCheckItem(text: "정상 수면 복구됨", state: .verified),
+        ]
+      )
     case .unknown:
-      states = [.unknown, .pending, .pending, .unknown]
+      return SafetyChecklistPresentation(
+        title: "안전 상태 확인 불가",
+        items: [
+          SafetyCheckItem(text: "네트워크 연결 확인 불가", state: .unknown),
+          SafetyCheckItem(text: "인터넷 연결 확인 불가", state: .unknown),
+          SafetyCheckItem(text: "기기 상태 확인 불가", state: .unknown),
+          SafetyCheckItem(text: "수면 보호 확인 불가", state: .unknown),
+        ]
+      )
     case .inactive:
       return nil
     }
-
-    return FlowlinePresentation(
-      steps: zip(["네트워크", "인터넷", "기기", "보호"], states).map {
-        FlowlineStep(label: $0.0, state: $0.1)
-      }
-    )
   }
 }
 
@@ -253,7 +307,7 @@ struct MenuBarPresentation: Equatable, Sendable {
   let detail: String
   let iconStyle: MenuBarIconStyle
   let tone: MenuBarTone
-  let flowline: FlowlinePresentation?
+  let safetyChecklist: SafetyChecklistPresentation?
 
   var buttonTitle: String {
     statusIndicator.isEmpty ? "Runtinue" : "Runtinue \(statusIndicator)"
@@ -272,7 +326,7 @@ struct MenuBarPresentation: Equatable, Sendable {
       guidance = "덮개를 아직 닫지 마세요."
       detail = "Supervisor의 최신 보호 상태를 기다리는 중"
       tone = .progress
-      flowline = nil
+      safetyChecklist = nil
       return
     }
     guard let status else {
@@ -282,10 +336,10 @@ struct MenuBarPresentation: Equatable, Sendable {
       guidance = "덮개를 닫지 마세요."
       detail = "Supervisor 연결과 현재 상태를 다시 확인하세요."
       tone = .unknown
-      flowline = nil
+      safetyChecklist = nil
       return
     }
-    flowline = FlowlinePresentation.trip(status: status)
+    safetyChecklist = SafetyChecklistPresentation.trip(status: status)
     switch status.verdict {
     case .protected:
       statusIndicator = "✓"

@@ -278,44 +278,90 @@ final class MenuBarModelsTests: XCTestCase {
     XCTAssertEqual(presentation.summary, "Desk 보호 중, 덮개 열기 필요")
   }
 
-  func testProtectedTripOnlyShowsVerifiedEndpointAfterClosedLidReadBack() throws {
+  func testProtectedTripChecklistOnlyShowsVerifiedProtectionAfterClosedLidReadBack() throws {
     let verified = try XCTUnwrap(
       MenuBarPresentation(
         status: status(verdict: .protected, closedLidAllowed: true)
-      ).flowline
+      ).safetyChecklist
     )
     let unverified = try XCTUnwrap(
       MenuBarPresentation(
         status: status(verdict: .protected, closedLidAllowed: false)
-      ).flowline
+      ).safetyChecklist
     )
 
-    XCTAssertEqual(verified.steps.map(\.state), [.passed, .passed, .passed, .verified])
-    XCTAssertEqual(unverified.steps.map(\.state), [.passed, .passed, .passed, .passed])
+    XCTAssertEqual(verified.title, "안전 확인 4개 완료")
+    XCTAssertEqual(verified.items.map(\.state), [.passed, .passed, .passed, .verified])
+    XCTAssertEqual(verified.items.last?.text, "수면 보호 적용됨")
+    XCTAssertEqual(unverified.title, "보호 적용, 덮개 닫기 미승인")
+    XCTAssertEqual(unverified.items.map(\.state), [.passed, .passed, .passed, .passed])
   }
 
-  func testTripFlowlineTracksWaitingAcquiringAndRecovery() throws {
+  func testTripChecklistNamesEachWaitingAndAcquiringCheck() throws {
     let waiting = try XCTUnwrap(
       MenuBarPresentation(
         status: status(verdict: .waitingForHotspot, closedLidAllowed: false)
-      ).flowline
+      ).safetyChecklist
     )
-    XCTAssertEqual(waiting.steps.map(\.state), [.current, .pending, .pending, .pending])
+    XCTAssertEqual(waiting.title, "안전 확인 중 0/4")
+    XCTAssertEqual(waiting.items.map(\.state), [.current, .pending, .pending, .pending])
+    XCTAssertEqual(
+      waiting.items.map(\.text),
+      ["네트워크 연결 확인 중", "인터넷 확인 대기", "기기 상태 확인 대기", "수면 보호 확인 대기"]
+    )
 
     let acquiring = try XCTUnwrap(
       MenuBarPresentation(
         status: status(verdict: .acquiring, closedLidAllowed: false)
-      ).flowline
+      ).safetyChecklist
     )
-    XCTAssertEqual(acquiring.steps.map(\.state), [.passed, .passed, .passed, .current])
+    XCTAssertEqual(acquiring.title, "안전 확인 중 3/4")
+    XCTAssertEqual(acquiring.items.map(\.state), [.passed, .passed, .passed, .current])
+    XCTAssertEqual(acquiring.items.last?.text, "수면 보호 확인 중")
+  }
 
-    let recovery = try XCTUnwrap(
+  func testTripChecklistSeparatesReleaseRecoveryAndCompletedSafetyStop() throws {
+    let releasing = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .releasing, closedLidAllowed: false)
+      ).safetyChecklist
+    )
+    XCTAssertEqual(releasing.title, "복구 상태 확인 중")
+    XCTAssertEqual(releasing.items.map(\.state), [.current, .pending])
+
+    let recoveryPending = try XCTUnwrap(
       MenuBarPresentation(
         status: status(verdict: .recoveryPending, closedLidAllowed: false)
-      ).flowline
+      ).safetyChecklist
     )
-    XCTAssertEqual(recovery.steps.map(\.label), ["수면 보호", "정상 수면"])
-    XCTAssertEqual(recovery.steps.map(\.state), [.passed, .current])
+    XCTAssertEqual(recoveryPending.title, "복구 상태 확인 필요")
+    XCTAssertEqual(recoveryPending.items.map(\.state), [.failed, .current])
+    XCTAssertEqual(
+      recoveryPending.items.map(\.text),
+      ["수면 보호 해제 미확인", "정상 수면 확인 재시도 중"]
+    )
+
+    let unsafeInProgress = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .unsafe, closedLidAllowed: false)
+      ).safetyChecklist
+    )
+    XCTAssertEqual(unsafeInProgress.title, "안전 중단 처리 중")
+    XCTAssertEqual(unsafeInProgress.items.map(\.state), [.failed, .current])
+    XCTAssertEqual(
+      unsafeInProgress.items.map(\.text),
+      ["기기 안전 기준 벗어남", "정상 수면 복구 준비 중"]
+    )
+
+    let unsafeEnded = try XCTUnwrap(
+      MenuBarPresentation(
+        status: status(verdict: .unsafe, closedLidAllowed: false, phase: .ended)
+      ).safetyChecklist
+    )
+    XCTAssertEqual(unsafeEnded.title, "안전 중단 완료")
+    XCTAssertEqual(unsafeEnded.items.map(\.state), [.failed, .verified])
+    XCTAssertEqual(unsafeEnded.items.map(\.text), ["기기 안전 기준 벗어남", "정상 수면 복구됨"])
+    XCTAssertFalse(unsafeEnded.items.map(\.text).contains("기기 상태 안전"))
   }
 
   func testCriticalWarningRequiresResponsibilityUnconfirmedStateAndUnreadableOverride() {
