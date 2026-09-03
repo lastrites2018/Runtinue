@@ -25,6 +25,10 @@ printf '%s\0' \
   '.env' '.release/output.swift' \
   'private.log' 'private.jsonl' 'private.pdf' 'private.txt' \
   'private.docx' 'private.png' 'private.p12' 'Sources/private.json' \
+  'READMEAssets/private.png' 'READMEAssets/private.gif' \
+  'READMEAssets/session.json' \
+  'Packaging/Runtinue.xcassets/private.json' \
+  'Packaging/Runtinue.xcassets/Runtinue.appiconset/private.json' \
   > "$runtinue_check_dir/blocked-probes"
 
 check_ignored() {

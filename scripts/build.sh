@@ -81,7 +81,38 @@ for icon_size in 16 32 128 256 512; do
   /usr/bin/sips -z "${retina_size}" "${retina_size}" "${project_root}/Packaging/RuntinueIcon.png" \
     --out "${iconset_root}/icon_${icon_size}x${icon_size}@2x.png" >/dev/null
 done
-/usr/bin/iconutil --convert icns --output "${app_root}/Contents/Resources/Runtinue.icns" "${iconset_root}"
+/usr/bin/iconutil --convert icns --output "${app_root}/Contents/Resources/Runtinue.icns" "${iconset_root}" || {
+  print -u2 "iconutil 변환 실패. Xcode asset catalog compiler로 다시 시도합니다"
+  actool=$(/usr/bin/xcrun --find actool 2>/dev/null) || {
+    print -u2 "iconutil fallback에 필요한 actool을 찾을 수 없습니다"
+    exit 69
+  }
+  asset_catalog_root="${distribution_root}/Runtinue.xcassets"
+  app_icon_root="${asset_catalog_root}/Runtinue.appiconset"
+  asset_output_root="${distribution_root}/asset-output"
+  rm -rf -- "${asset_catalog_root}" "${asset_output_root}"
+  mkdir -p "${asset_catalog_root}" "${app_icon_root}" "${asset_output_root}"
+  /usr/bin/ditto "${project_root}/Packaging/Runtinue.xcassets/Contents.json" \
+    "${asset_catalog_root}/Contents.json"
+  /usr/bin/ditto "${project_root}/Packaging/Runtinue.xcassets/Runtinue.appiconset/Contents.json" \
+    "${app_icon_root}/Contents.json"
+  for icon in "${iconset_root}"/*.png; do
+    /usr/bin/ditto "${icon}" "${app_icon_root}/${icon:t}"
+  done
+  "${actool}" \
+    --compile "${asset_output_root}" \
+    --platform macosx \
+    --minimum-deployment-target 13.0 \
+    --app-icon Runtinue \
+    --output-partial-info-plist "${distribution_root}/Runtinue.asset-info.plist" \
+    "${asset_catalog_root}" >/dev/null
+  [[ -f "${asset_output_root}/Runtinue.icns" ]] || {
+    print -u2 "actool이 Runtinue.icns를 생성하지 않았습니다"
+    exit 66
+  }
+  /usr/bin/ditto "${asset_output_root}/Runtinue.icns" \
+    "${app_root}/Contents/Resources/Runtinue.icns"
+}
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${version}" "${app_root}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${build_number}" "${app_root}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :RuntinueSourceCommit ${source_commit}" "${app_root}/Contents/Info.plist"

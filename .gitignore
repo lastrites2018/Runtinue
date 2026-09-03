@@ -5,11 +5,16 @@
 !/README.md
 !/AGENTS.md
 !/LICENSE
+!/READMEAssets/trip-start.png
+!/READMEAssets/trip-protected.png
+!/READMEAssets/recovery.png
 !/Package.swift
 !/VERSION
 !/Sources/**/*.swift
 !/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png
 !/Packaging/RuntinueIcon.png
+!/Packaging/Runtinue.xcassets/Contents.json
+!/Packaging/Runtinue.xcassets/Runtinue.appiconset/Contents.json
 !/Tests/**/*.swift
 !/scripts/*.sh
 !/Resources/*.plist
