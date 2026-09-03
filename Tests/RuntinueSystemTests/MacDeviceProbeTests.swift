@@ -50,10 +50,10 @@ final class MacDeviceProbeTests: XCTestCase {
     }
   }
 
-  func testThermalFusionUsesTheMoreSevereKnownSignal() {
+  func testThermalFusionOnlyRaisesAKnownPublicThermalLevel() {
     XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.fair, .serious), .serious)
     XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.critical, .fair), .critical)
-    XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, .fair), .fair)
+    XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, .fair), .unknown)
     XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.serious, .unknown), .serious)
     XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, .unknown), .unknown)
   }
