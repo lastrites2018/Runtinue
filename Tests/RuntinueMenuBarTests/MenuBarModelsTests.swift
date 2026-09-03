@@ -292,6 +292,10 @@ final class MenuBarModelsTests: XCTestCase {
 
     XCTAssertEqual(verified.title, "안전 확인 4개 완료")
     XCTAssertEqual(verified.items.map(\.state), [.passed, .passed, .passed, .verified])
+    XCTAssertEqual(
+      Array(verified.items.prefix(2).map(\.text)),
+      ["시작 시 네트워크 확인", "시작 시 인터넷 확인"]
+    )
     XCTAssertEqual(verified.items.last?.text, "수면 보호 적용됨")
     XCTAssertEqual(unverified.title, "보호 적용, 덮개 닫기 미승인")
     XCTAssertEqual(unverified.items.map(\.state), [.passed, .passed, .passed, .passed])
@@ -317,7 +321,10 @@ final class MenuBarModelsTests: XCTestCase {
     )
     XCTAssertEqual(acquiring.title, "안전 확인 중 3/4")
     XCTAssertEqual(acquiring.items.map(\.state), [.passed, .passed, .passed, .current])
-    XCTAssertEqual(acquiring.items.last?.text, "수면 보호 확인 중")
+    XCTAssertEqual(
+      acquiring.items.map(\.text),
+      ["시작 시 네트워크 확인", "시작 시 인터넷 확인", "기기 상태 안전", "수면 보호 확인 중"]
+    )
   }
 
   func testTripChecklistSeparatesReleaseRecoveryAndCompletedSafetyStop() throws {
@@ -359,8 +366,11 @@ final class MenuBarModelsTests: XCTestCase {
       ).safetyChecklist
     )
     XCTAssertEqual(unsafeEnded.title, "안전 중단 완료")
-    XCTAssertEqual(unsafeEnded.items.map(\.state), [.failed, .verified])
-    XCTAssertEqual(unsafeEnded.items.map(\.text), ["기기 안전 기준 벗어남", "정상 수면 복구됨"])
+    XCTAssertEqual(unsafeEnded.items.map(\.state), [.failed, .unknown])
+    XCTAssertEqual(
+      unsafeEnded.items.map(\.text),
+      ["기기 안전 기준 벗어남", "정상 수면 상태 확인 필요"]
+    )
     XCTAssertFalse(unsafeEnded.items.map(\.text).contains("기기 상태 안전"))
   }
 

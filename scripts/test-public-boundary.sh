@@ -113,6 +113,17 @@ git -C "$fixture" add .gitignore
 git -C "$fixture" update-index --force-remove READMEAssets/extra.jpg
 rm -f "$fixture/READMEAssets/extra.jpg"
 
+# 대소문자를 구분하는 checkout에서도 READMEAssets의 이름 변형을 허용하지 않습니다.
+case_variant_blob=$(printf '대소문자 변형 이미지\n' | git -C "$fixture" hash-object -w --stdin)
+printf '\n!/ReadmeAssets/extra.png\n' >> "$fixture/.gitignore"
+git -C "$fixture" add .gitignore
+git -C "$fixture" update-index --add --cacheinfo \
+  "100644,$case_variant_blob,ReadmeAssets/extra.png"
+expect_failure 'README 화면 이미지 디렉터리 대소문자 변형 차단' check_fixture --staged
+cp "$project_root/.gitignore" "$fixture/.gitignore"
+git -C "$fixture" add .gitignore
+git -C "$fixture" update-index --force-remove ReadmeAssets/extra.png
+
 ln -s ../README.md "$fixture/Sources/Link.swift"
 git -C "$fixture" add Sources/Link.swift
 expect_failure '허용 확장자로 만든 심볼릭 링크 차단' check_fixture --staged

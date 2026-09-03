@@ -102,8 +102,8 @@ final class SafetyChecklistViewsTests: XCTestCase {
         SafetyChecklistPresentation(
           title: "안전 확인 4개 완료",
           items: [
-            SafetyCheckItem(text: "네트워크 연결됨", state: .passed),
-            SafetyCheckItem(text: "인터넷 연결됨", state: .passed),
+            SafetyCheckItem(text: "시작 시 네트워크 확인", state: .passed),
+            SafetyCheckItem(text: "시작 시 인터넷 확인", state: .passed),
             SafetyCheckItem(text: "기기 상태 안전", state: .passed),
             SafetyCheckItem(text: "수면 보호 적용됨", state: .verified),
           ]

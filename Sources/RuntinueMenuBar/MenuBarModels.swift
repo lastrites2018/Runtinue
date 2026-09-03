@@ -204,8 +204,8 @@ struct SafetyChecklistPresentation: Equatable, Sendable {
       return SafetyChecklistPresentation(
         title: "안전 확인 중 3/4",
         items: [
-          SafetyCheckItem(text: "네트워크 연결됨", state: .passed),
-          SafetyCheckItem(text: "인터넷 연결됨", state: .passed),
+          SafetyCheckItem(text: "시작 시 네트워크 확인", state: .passed),
+          SafetyCheckItem(text: "시작 시 인터넷 확인", state: .passed),
           SafetyCheckItem(text: "기기 상태 안전", state: .passed),
           SafetyCheckItem(text: "수면 보호 확인 중", state: .current),
         ]
@@ -215,8 +215,8 @@ struct SafetyChecklistPresentation: Equatable, Sendable {
         title: status.closedLidAllowed
           ? "안전 확인 4개 완료" : "보호 적용, 덮개 닫기 미승인",
         items: [
-          SafetyCheckItem(text: "네트워크 연결됨", state: .passed),
-          SafetyCheckItem(text: "인터넷 연결됨", state: .passed),
+          SafetyCheckItem(text: "시작 시 네트워크 확인", state: .passed),
+          SafetyCheckItem(text: "시작 시 인터넷 확인", state: .passed),
           SafetyCheckItem(text: "기기 상태 안전", state: .passed),
           SafetyCheckItem(
             text: "수면 보호 적용됨",
@@ -254,7 +254,7 @@ struct SafetyChecklistPresentation: Equatable, Sendable {
         title: "안전 중단 완료",
         items: [
           SafetyCheckItem(text: "기기 안전 기준 벗어남", state: .failed),
-          SafetyCheckItem(text: "정상 수면 복구됨", state: .verified),
+          SafetyCheckItem(text: "정상 수면 상태 확인 필요", state: .unknown),
         ]
       )
     case .unknown:
