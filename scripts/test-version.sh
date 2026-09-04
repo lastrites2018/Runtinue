@@ -64,6 +64,14 @@ if /usr/bin/grep -Eq 'VERSION=[0-9]|Runtinue-[0-9]+[.][0-9]+' "${project_root}/R
   print -u2 "README 명령에 버전을 고정하지 말고 version.sh를 사용하세요"
   exit 1
 fi
+if /usr/bin/grep -Eq '현재 (개발 )?버전 [0-9]+([.][0-9]+){2}' "${project_root}/README.md"; then
+  print -u2 "README 현재 버전에 숫자를 고정하지 말고 VERSION 파일을 참조하세요"
+  exit 1
+fi
+/usr/bin/grep -Fq '[VERSION](VERSION)' "${project_root}/README.md" || {
+  print -u2 "README 현재 버전 안내가 VERSION 파일을 참조하지 않습니다"
+  exit 1
+}
 [[ "$(/usr/bin/plutil -extract CFBundleShortVersionString raw "${project_root}/Packaging/Runtinue.app.Info.plist")" == VERSION_FROM_BUILD ]] || {
   print -u2 "Info.plist 버전은 빌드 시 VERSION 파일에서 주입해야 합니다"
   exit 1
