@@ -1,14 +1,67 @@
 import CoreGraphics
+import Darwin
 import Foundation
 import IOKit
 import IOKit.ps
 import RuntinueCore
 
+// The Swift Darwin overlay does not expose notify(3). The notification name and
+// pressure-state values below follow the macOS SDK's OSThermalNotification.h.
+@_silgen_name("notify_register_check")
+private func runtinueNotifyRegisterCheck(
+  _ name: UnsafePointer<CChar>,
+  _ outToken: UnsafeMutablePointer<Int32>
+) -> UInt32
+
+@_silgen_name("notify_get_state")
+private func runtinueNotifyGetState(
+  _ token: Int32,
+  _ outState: UnsafeMutablePointer<UInt64>
+) -> UInt32
+
+@_silgen_name("notify_cancel")
+private func runtinueNotifyCancel(_ token: Int32) -> UInt32
+
+private final class SystemThermalPressureProbe: @unchecked Sendable {
+  private static let notificationName = "com.apple.system.thermalpressurelevel"
+  private static let success: UInt32 = 0
+
+  private let token: Int32?
+
+  init() {
+    var registeredToken: Int32 = 0
+    let status = Self.notificationName.withCString {
+      runtinueNotifyRegisterCheck($0, &registeredToken)
+    }
+    self.token = status == Self.success ? registeredToken : nil
+  }
+
+  deinit {
+    if let token {
+      _ = runtinueNotifyCancel(token)
+    }
+  }
+
+  func currentLevel() -> ThermalLevel {
+    guard let token else {
+      return .unknown
+    }
+
+    var state: UInt64 = 0
+    guard runtinueNotifyGetState(token, &state) == Self.success else {
+      return .unknown
+    }
+    return MacDeviceProbe.thermalLevel(forPressureState: state)
+  }
+}
+
 public struct MacDeviceProbe: Sendable {
   private let clock: any MonotonicTimeSource
+  private let thermalPressureProbe: SystemThermalPressureProbe
 
   public init(clock: any MonotonicTimeSource = SystemContinuousClock()) {
     self.clock = clock
+    self.thermalPressureProbe = SystemThermalPressureProbe()
   }
 
   public func snapshot() -> DeviceSafetySnapshot {
@@ -19,10 +72,14 @@ public struct MacDeviceProbe: Sendable {
       hasInternalBattery: power.hasInternalBattery,
       internalDisplayActive: displays.internalActive
     )
+    let thermal = Self.moreSevereThermalLevel(
+      Self.readThermalLevel(),
+      thermalPressureProbe.currentLevel()
+    )
     return DeviceSafetySnapshot(
       batteryPercent: power.percentage,
       powerConnection: power.connection,
-      thermalLevel: Self.readThermalLevel(),
+      thermalLevel: thermal,
       lidState: lid.state,
       externalDisplayState: displays.external,
       lowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled,
@@ -94,6 +151,51 @@ public struct MacDeviceProbe: Sendable {
     if registry == .open, !internalDisplayActive { return (.closed, true) }
     if registry == .closed, internalDisplayActive { return (.closed, true) }
     return (registry, false)
+  }
+
+  static func thermalLevel(forPressureState state: UInt64) -> ThermalLevel {
+    switch state {
+    case 0:
+      .nominal
+    case 1:
+      .fair
+    case 2, 3:
+      .serious
+    case 4:
+      .critical
+    default:
+      .unknown
+    }
+  }
+
+  static func moreSevereThermalLevel(
+    _ primary: ThermalLevel,
+    _ supplemental: ThermalLevel
+  ) -> ThermalLevel {
+    guard primary != .unknown else {
+      return .unknown
+    }
+    guard supplemental != .unknown else {
+      return primary
+    }
+    return thermalSeverity(supplemental) > thermalSeverity(primary)
+      ? supplemental
+      : primary
+  }
+
+  private static func thermalSeverity(_ level: ThermalLevel) -> Int {
+    switch level {
+    case .nominal:
+      0
+    case .fair:
+      1
+    case .serious:
+      2
+    case .critical:
+      3
+    case .unknown:
+      -1
+    }
   }
 
   private static func readThermalLevel() -> ThermalLevel {

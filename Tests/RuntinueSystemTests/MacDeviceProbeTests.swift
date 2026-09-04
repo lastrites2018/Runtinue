@@ -34,6 +34,40 @@ final class MacDeviceProbeTests: XCTestCase {
     }
   }
 
+  func testThermalPressureStatesMapWithoutGuessingUnknownValues() {
+    let expected: [(UInt64, ThermalLevel)] = [
+      (0, .nominal),
+      (1, .fair),
+      (2, .serious),
+      (3, .serious),
+      (4, .critical),
+      (5, .unknown),
+      (.max, .unknown),
+    ]
+
+    for (state, level) in expected {
+      XCTAssertEqual(MacDeviceProbe.thermalLevel(forPressureState: state), level)
+    }
+  }
+
+  func testThermalFusionCoversKnownAndUnknownCaseMatrix() {
+    let knownLevels: [ThermalLevel] = [.nominal, .fair, .serious, .critical]
+
+    for (primaryIndex, primary) in knownLevels.enumerated() {
+      for (supplementalIndex, supplemental) in knownLevels.enumerated() {
+        XCTAssertEqual(
+          MacDeviceProbe.moreSevereThermalLevel(primary, supplemental),
+          knownLevels[max(primaryIndex, supplementalIndex)]
+        )
+      }
+
+      XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(primary, .unknown), primary)
+      XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, primary), .unknown)
+    }
+
+    XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, .unknown), .unknown)
+  }
+
   func testLidDisagreementAlwaysUsesClosedAndProducesDiagnosticSignal() {
     for (registry, active) in [(LidState.open, false), (.closed, true)] {
       let resolved = MacDeviceProbe.reconcileLid(
