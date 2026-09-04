@@ -104,11 +104,12 @@ public struct DeviceSafetyTracker: Sendable {
       return
     }
     lastChargingTrendObservation = snapshot.capturedAt
-    guard !batteryUnavailable,
-      snapshot.powerConnection == .acCharging,
-      let percent = snapshot.batteryPercent
-    else {
+    guard snapshot.powerConnection == .acCharging else {
       resetChargingTrend()
+      return
+    }
+    guard !batteryUnavailable, let percent = snapshot.batteryPercent else {
+      resetChargingComparison()
       return
     }
 
@@ -157,8 +158,12 @@ public struct DeviceSafetyTracker: Sendable {
   }
 
   private mutating func resetChargingTrend() {
+    resetChargingComparison()
+    persistentChargingDropOnAC = false
+  }
+
+  private mutating func resetChargingComparison() {
     lastChargingBatterySample = nil
     chargingDropCandidate = nil
-    persistentChargingDropOnAC = false
   }
 }

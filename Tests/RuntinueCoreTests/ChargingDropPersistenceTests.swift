@@ -145,6 +145,22 @@ final class ChargingDropPersistenceTests: XCTestCase {
     XCTAssertEqual(tracker.evaluate(sample(29, at: 102), at: instant(102)), .safe)
   }
 
+  func testBatteryUnavailablePreservesAConfirmedChargingDrop() {
+    var tracker = DeviceSafetyTracker()
+
+    XCTAssertEqual(tracker.evaluate(sample(50, at: 100), at: instant(100)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(49, at: 101), at: instant(101)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(49, at: 102), at: instant(102)), .safe)
+    XCTAssertEqual(
+      tracker.evaluate(sample(nil, at: 103), at: instant(103)),
+      .uncertain(.batteryUnavailable(consecutiveFailures: 1, releaseAfter: 3))
+    )
+    XCTAssertEqual(
+      tracker.evaluate(sample(29, at: 104), at: instant(104)),
+      .stop(.batteryBelowFloor(observed: 29, floor: 30))
+    )
+  }
+
   func testOutOfOrderOrDuplicatePowerExitCannotClearNewerTrend() {
     for power in [PowerConnection.acNotCharging, .battery, .unknown] {
       for exitTime: UInt64 in [101, 102] {
@@ -200,7 +216,7 @@ final class ChargingDropPersistenceTests: XCTestCase {
   }
 
   private func sample(
-    _ percent: Int,
+    _ percent: Int?,
     power: PowerConnection = .acCharging,
     thermal: ThermalLevel = .nominal,
     at seconds: UInt64
