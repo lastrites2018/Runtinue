@@ -52,6 +52,24 @@ public struct DeviceSafetyTracker: Sendable {
       lastCountedBatterySnapshot = nil
     }
 
+    if snapshot.powerConnection == .acCharging, let percent = snapshot.batteryPercent {
+      if let previous = lastChargingBatterySample,
+        let elapsed = snapshot.capturedAt.durationSince(previous.time), elapsed > maximumAge
+      {
+        resetChargingTrend()
+      }
+      if let previous = lastChargingBatterySample, snapshot.capturedAt > previous.time {
+        updateChargingTrend(
+          percent: percent,
+          at: snapshot.capturedAt,
+          previous: previous
+        )
+      }
+      if lastChargingBatterySample.map({ snapshot.capturedAt > $0.time }) ?? true {
+        lastChargingBatterySample = (snapshot.capturedAt, percent)
+      }
+    }
+
     if snapshot.thermalLevel == .unknown {
       if thermalUnavailableSince == nil {
         thermalUnavailableSince = now
@@ -86,23 +104,6 @@ public struct DeviceSafetyTracker: Sendable {
       )
     }
 
-    if snapshot.powerConnection == .acCharging, let percent = snapshot.batteryPercent {
-      if let previous = lastChargingBatterySample,
-        let elapsed = snapshot.capturedAt.durationSince(previous.time), elapsed > maximumAge
-      {
-        resetChargingTrend()
-      }
-      if let previous = lastChargingBatterySample, snapshot.capturedAt > previous.time {
-        updateChargingTrend(
-          percent: percent,
-          at: snapshot.capturedAt,
-          previous: previous
-        )
-      }
-      if lastChargingBatterySample.map({ snapshot.capturedAt > $0.time }) ?? true {
-        lastChargingBatterySample = (snapshot.capturedAt, percent)
-      }
-    }
     return policy.evaluate(
       snapshot,
       at: now,

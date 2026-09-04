@@ -105,6 +105,35 @@ final class ChargingDropPersistenceTests: XCTestCase {
     }
   }
 
+  func testThermalUnknownFirstDropStillSeedsPersistentTrend() {
+    var tracker = DeviceSafetyTracker()
+
+    XCTAssertEqual(tracker.evaluate(sample(31, at: 100), at: instant(100)), .safe)
+    XCTAssertEqual(
+      tracker.evaluate(sample(29, thermal: .unknown, at: 101), at: instant(101)),
+      .uncertain(.thermalUnavailable(graceRemaining: .seconds(30)))
+    )
+    XCTAssertEqual(
+      tracker.evaluate(sample(29, at: 102), at: instant(102)),
+      .stop(.batteryBelowFloor(observed: 29, floor: 30))
+    )
+  }
+
+  func testThermalUnknownFollowUpStillMarksPersistentTrend() {
+    var tracker = DeviceSafetyTracker()
+
+    XCTAssertEqual(tracker.evaluate(sample(31, at: 100), at: instant(100)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 101), at: instant(101)), .safe)
+    XCTAssertEqual(
+      tracker.evaluate(sample(29, thermal: .unknown, at: 102), at: instant(102)),
+      .uncertain(.thermalUnavailable(graceRemaining: .seconds(30)))
+    )
+    XCTAssertEqual(
+      tracker.evaluate(sample(29, at: 103), at: instant(103)),
+      .stop(.batteryBelowFloor(observed: 29, floor: 30))
+    )
+  }
+
   private func sample(
     _ percent: Int,
     power: PowerConnection = .acCharging,
