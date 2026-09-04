@@ -50,11 +50,21 @@ final class MacDeviceProbeTests: XCTestCase {
     }
   }
 
-  func testThermalFusionOnlyRaisesAKnownPublicThermalLevel() {
-    XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.fair, .serious), .serious)
-    XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.critical, .fair), .critical)
-    XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, .fair), .unknown)
-    XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.serious, .unknown), .serious)
+  func testThermalFusionCoversKnownAndUnknownCaseMatrix() {
+    let knownLevels: [ThermalLevel] = [.nominal, .fair, .serious, .critical]
+
+    for (primaryIndex, primary) in knownLevels.enumerated() {
+      for (supplementalIndex, supplemental) in knownLevels.enumerated() {
+        XCTAssertEqual(
+          MacDeviceProbe.moreSevereThermalLevel(primary, supplemental),
+          knownLevels[max(primaryIndex, supplementalIndex)]
+        )
+      }
+
+      XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(primary, .unknown), primary)
+      XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, primary), .unknown)
+    }
+
     XCTAssertEqual(MacDeviceProbe.moreSevereThermalLevel(.unknown, .unknown), .unknown)
   }
 

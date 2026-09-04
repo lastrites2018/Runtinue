@@ -5,6 +5,8 @@ import IOKit
 import IOKit.ps
 import RuntinueCore
 
+// The Swift Darwin overlay does not expose notify(3). The notification name and
+// pressure-state values below follow the macOS SDK's OSThermalNotification.h.
 @_silgen_name("notify_register_check")
 private func runtinueNotifyRegisterCheck(
   _ name: UnsafePointer<CChar>,
