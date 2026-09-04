@@ -145,6 +145,60 @@ final class ChargingDropPersistenceTests: XCTestCase {
     XCTAssertEqual(tracker.evaluate(sample(29, at: 102), at: instant(102)), .safe)
   }
 
+  func testOutOfOrderOrDuplicatePowerExitCannotClearNewerTrend() {
+    for power in [PowerConnection.acNotCharging, .battery, .unknown] {
+      for exitTime: UInt64 in [101, 102] {
+        var tracker = DeviceSafetyTracker()
+
+        XCTAssertEqual(tracker.evaluate(sample(50, at: 100), at: instant(100)), .safe)
+        XCTAssertEqual(tracker.evaluate(sample(49, at: 102), at: instant(102)), .safe)
+        XCTAssertEqual(
+          tracker.evaluate(sample(49, power: power, at: exitTime), at: instant(102)),
+          .safe
+        )
+        XCTAssertEqual(
+          tracker.evaluate(sample(29, at: 103), at: instant(103)),
+          .stop(.batteryBelowFloor(observed: 29, floor: 30))
+        )
+      }
+    }
+  }
+
+  func testOutOfOrderOrDuplicateInvalidBatteryCannotClearNewerTrend() {
+    for invalidTime: UInt64 in [101, 102] {
+      var tracker = DeviceSafetyTracker()
+
+      XCTAssertEqual(tracker.evaluate(sample(50, at: 100), at: instant(100)), .safe)
+      XCTAssertEqual(tracker.evaluate(sample(49, at: 102), at: instant(102)), .safe)
+      XCTAssertEqual(
+        tracker.evaluate(sample(101, at: invalidTime), at: instant(102)),
+        .uncertain(.batteryUnavailable(consecutiveFailures: 1, releaseAfter: 3))
+      )
+      XCTAssertEqual(
+        tracker.evaluate(sample(29, at: 103), at: instant(103)),
+        .stop(.batteryBelowFloor(observed: 29, floor: 30))
+      )
+    }
+  }
+
+  func testOutOfOrderOrDuplicateChargingCannotRestartAfterNewerPowerExit() {
+    for chargingTime: UInt64 in [101, 102] {
+      var tracker = DeviceSafetyTracker()
+
+      XCTAssertEqual(tracker.evaluate(sample(50, at: 100), at: instant(100)), .safe)
+      XCTAssertEqual(
+        tracker.evaluate(sample(49, power: .battery, at: 102), at: instant(102)),
+        .safe
+      )
+      XCTAssertEqual(
+        tracker.evaluate(sample(49, at: chargingTime), at: instant(102)),
+        .safe
+      )
+      XCTAssertEqual(tracker.evaluate(sample(29, at: 103), at: instant(103)), .safe)
+      XCTAssertEqual(tracker.evaluate(sample(29, at: 104), at: instant(104)), .safe)
+    }
+  }
+
   private func sample(
     _ percent: Int,
     power: PowerConnection = .acCharging,

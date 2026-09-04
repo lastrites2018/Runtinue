@@ -6,6 +6,7 @@ public struct DeviceSafetyTracker: Sendable {
   private var consecutiveBatteryFailures = 0
   private var thermalUnavailableSince: MonotonicInstant?
   private var lastCountedBatterySnapshot: MonotonicInstant?
+  private var lastChargingTrendObservation: MonotonicInstant?
   private var lastChargingBatterySample: (time: MonotonicInstant, percent: Int)?
   private var chargingDropCandidate: (time: MonotonicInstant, percent: Int)?
   private var persistentChargingDropOnAC = false
@@ -36,13 +37,8 @@ public struct DeviceSafetyTracker: Sendable {
       return .stop(.staleSnapshot(age: age))
     }
 
-    if snapshot.powerConnection != .acCharging {
-      resetChargingTrend()
-    }
-
     let batteryUnavailable = snapshot.batteryPercent.map { !(0...100).contains($0) } ?? true
     if batteryUnavailable {
-      resetChargingTrend()
       if lastCountedBatterySnapshot != snapshot.capturedAt {
         consecutiveBatteryFailures += 1
         lastCountedBatterySnapshot = snapshot.capturedAt
@@ -52,26 +48,11 @@ public struct DeviceSafetyTracker: Sendable {
       lastCountedBatterySnapshot = nil
     }
 
-    if !batteryUnavailable,
-      snapshot.powerConnection == .acCharging,
-      let percent = snapshot.batteryPercent
-    {
-      if let previous = lastChargingBatterySample,
-        let elapsed = snapshot.capturedAt.durationSince(previous.time), elapsed > maximumAge
-      {
-        resetChargingTrend()
-      }
-      if let previous = lastChargingBatterySample, snapshot.capturedAt > previous.time {
-        updateChargingTrend(
-          percent: percent,
-          at: snapshot.capturedAt,
-          previous: previous
-        )
-      }
-      if lastChargingBatterySample.map({ snapshot.capturedAt > $0.time }) ?? true {
-        lastChargingBatterySample = (snapshot.capturedAt, percent)
-      }
-    }
+    observeChargingTrend(
+      snapshot,
+      batteryUnavailable: batteryUnavailable,
+      maximumAge: maximumAge
+    )
 
     if snapshot.thermalLevel == .unknown {
       if thermalUnavailableSince == nil {
@@ -112,6 +93,38 @@ public struct DeviceSafetyTracker: Sendable {
       at: now,
       persistentChargingDropOnAC: persistentChargingDropOnAC
     )
+  }
+
+  private mutating func observeChargingTrend(
+    _ snapshot: DeviceSafetySnapshot,
+    batteryUnavailable: Bool,
+    maximumAge: Duration
+  ) {
+    guard lastChargingTrendObservation.map({ snapshot.capturedAt > $0 }) ?? true else {
+      return
+    }
+    lastChargingTrendObservation = snapshot.capturedAt
+    guard !batteryUnavailable,
+      snapshot.powerConnection == .acCharging,
+      let percent = snapshot.batteryPercent
+    else {
+      resetChargingTrend()
+      return
+    }
+
+    if let previous = lastChargingBatterySample,
+      let elapsed = snapshot.capturedAt.durationSince(previous.time), elapsed > maximumAge
+    {
+      resetChargingTrend()
+    }
+    if let previous = lastChargingBatterySample {
+      updateChargingTrend(
+        percent: percent,
+        at: snapshot.capturedAt,
+        previous: previous
+      )
+    }
+    lastChargingBatterySample = (snapshot.capturedAt, percent)
   }
 
   private mutating func updateChargingTrend(
