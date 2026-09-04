@@ -116,7 +116,7 @@ public struct DeviceSafetyTracker: Sendable {
     if let previous = lastChargingBatterySample,
       let elapsed = snapshot.capturedAt.durationSince(previous.time), elapsed > maximumAge
     {
-      resetChargingTrend()
+      resetChargingComparison()
     }
     if let previous = lastChargingBatterySample {
       updateChargingTrend(
