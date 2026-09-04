@@ -2,8 +2,8 @@ import XCTest
 
 @testable import RuntinueCore
 
-final class ChargingDischargeConfirmationTests: XCTestCase {
-  func testNextFreshSampleConfirmsAnUnrecoveredChargingDrop() {
+final class ChargingDropPersistenceTests: XCTestCase {
+  func testLaterSnapshotAppliesFloorToPersistentChargingDrop() {
     var tracker = DeviceSafetyTracker()
 
     XCTAssertEqual(tracker.evaluate(sample(31, at: 100), at: instant(100)), .safe)
@@ -38,7 +38,7 @@ final class ChargingDischargeConfirmationTests: XCTestCase {
     XCTAssertEqual(tracker.evaluate(sample(30, at: 104), at: instant(104)), .safe)
   }
 
-  func testConfirmedDrainRemainsConservativeUntilBatteryRises() {
+  func testPersistentChargingDropRemainsConservativeUntilBatteryRises() {
     var tracker = DeviceSafetyTracker()
 
     XCTAssertEqual(tracker.evaluate(sample(50, at: 100), at: instant(100)), .safe)
@@ -51,10 +51,50 @@ final class ChargingDischargeConfirmationTests: XCTestCase {
     XCTAssertEqual(tracker.evaluate(sample(30, at: 104), at: instant(104)), .safe)
   }
 
-  private func sample(_ percent: Int, at seconds: UInt64) -> DeviceSafetySnapshot {
+  func testOutOfOrderSnapshotCannotConfirmOrReplaceChargingTrend() {
+    var tracker = DeviceSafetyTracker()
+
+    XCTAssertEqual(tracker.evaluate(sample(31, at: 100), at: instant(100)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 102), at: instant(102)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(28, at: 101), at: instant(102)), .safe)
+    XCTAssertEqual(
+      tracker.evaluate(sample(29, at: 103), at: instant(103)),
+      .stop(.batteryBelowFloor(observed: 29, floor: 30))
+    )
+  }
+
+  func testLeavingChargingClearsPendingAndPersistentDrops() {
+    var tracker = DeviceSafetyTracker()
+
+    XCTAssertEqual(tracker.evaluate(sample(50, at: 100), at: instant(100)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(49, at: 101), at: instant(101)), .safe)
+    XCTAssertEqual(
+      tracker.evaluate(sample(49, power: .acNotCharging, at: 102), at: instant(102)),
+      .safe
+    )
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 103), at: instant(103)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 104), at: instant(104)), .safe)
+
+    tracker = DeviceSafetyTracker()
+    XCTAssertEqual(tracker.evaluate(sample(50, at: 200), at: instant(200)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(49, at: 201), at: instant(201)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(49, at: 202), at: instant(202)), .safe)
+    XCTAssertEqual(
+      tracker.evaluate(sample(49, power: .acNotCharging, at: 203), at: instant(203)),
+      .safe
+    )
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 204), at: instant(204)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 205), at: instant(205)), .safe)
+  }
+
+  private func sample(
+    _ percent: Int,
+    power: PowerConnection = .acCharging,
+    at seconds: UInt64
+  ) -> DeviceSafetySnapshot {
     DeviceSafetySnapshot(
       batteryPercent: percent,
-      powerConnection: .acCharging,
+      powerConnection: power,
       thermalLevel: .nominal,
       lidState: .closed,
       externalDisplayState: .absent,

@@ -35,12 +35,14 @@ final class TripChargingTrendSeedingTests: XCTestCase {
     }
 
     clock.advance(seconds: 1)
-    let confirmedDrain = await controller.observe(
+    let persistentDrop = await controller.observe(
       network: network(ssid: "iPhone", clock: clock),
       device: device(battery: 29, clock: clock)
     )
-    guard case .unsafe = confirmedDrain.verdict else {
-      return XCTFail("the next fresh sample should confirm drain, got \(confirmedDrain.verdict)")
+    guard case .unsafe = persistentDrop.verdict else {
+      return XCTFail(
+        "a later snapshot retaining the drop should release, got \(persistentDrop.verdict)"
+      )
     }
 
     let backendSnapshot = await backend.snapshot()

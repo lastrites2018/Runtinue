@@ -8,7 +8,7 @@ public struct DeviceSafetyTracker: Sendable {
   private var lastCountedBatterySnapshot: MonotonicInstant?
   private var lastChargingBatterySample: (time: MonotonicInstant, percent: Int)?
   private var chargingDropCandidate: (time: MonotonicInstant, percent: Int)?
-  private var batteryDepletingOnAC = false
+  private var persistentChargingDropOnAC = false
 
   public init(
     policy: DeviceSafetyPolicy = DeviceSafetyPolicy(),
@@ -104,7 +104,7 @@ public struct DeviceSafetyTracker: Sendable {
     return policy.evaluate(
       snapshot,
       at: now,
-      batteryDepletingOnAC: batteryDepletingOnAC
+      persistentChargingDropOnAC: persistentChargingDropOnAC
     )
   }
 
@@ -113,10 +113,10 @@ public struct DeviceSafetyTracker: Sendable {
     at time: MonotonicInstant,
     previous: (time: MonotonicInstant, percent: Int)
   ) {
-    if batteryDepletingOnAC {
+    if persistentChargingDropOnAC {
       if percent > previous.percent {
         chargingDropCandidate = nil
-        batteryDepletingOnAC = false
+        persistentChargingDropOnAC = false
       }
       return
     }
@@ -125,7 +125,9 @@ public struct DeviceSafetyTracker: Sendable {
       if percent > candidate.percent {
         chargingDropCandidate = nil
       } else if time > candidate.time {
-        batteryDepletingOnAC = true
+        // capturedAt proves a later app observation, not a fresh fuel-gauge
+        // measurement. Treat persistence conservatively without claiming cause.
+        persistentChargingDropOnAC = true
       }
       return
     }
@@ -138,6 +140,6 @@ public struct DeviceSafetyTracker: Sendable {
   private mutating func resetChargingTrend() {
     lastChargingBatterySample = nil
     chargingDropCandidate = nil
-    batteryDepletingOnAC = false
+    persistentChargingDropOnAC = false
   }
 }
