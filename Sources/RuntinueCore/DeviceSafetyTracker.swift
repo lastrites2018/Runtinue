@@ -36,6 +36,10 @@ public struct DeviceSafetyTracker: Sendable {
       return .stop(.staleSnapshot(age: age))
     }
 
+    if snapshot.powerConnection != .acCharging {
+      resetChargingTrend()
+    }
+
     let batteryUnavailable = snapshot.batteryPercent.map { !(0...100).contains($0) } ?? true
     if batteryUnavailable {
       resetChargingTrend()
@@ -98,8 +102,6 @@ public struct DeviceSafetyTracker: Sendable {
       if lastChargingBatterySample.map({ snapshot.capturedAt > $0.time }) ?? true {
         lastChargingBatterySample = (snapshot.capturedAt, percent)
       }
-    } else {
-      resetChargingTrend()
     }
     return policy.evaluate(
       snapshot,

@@ -87,15 +87,34 @@ final class ChargingDropPersistenceTests: XCTestCase {
     XCTAssertEqual(tracker.evaluate(sample(29, at: 205), at: instant(205)), .safe)
   }
 
+  func testFreshPowerExitClearsTrendBeforeThermalUnknownReturn() {
+    for power in [PowerConnection.acNotCharging, .battery, .unknown] {
+      var tracker = DeviceSafetyTracker()
+
+      XCTAssertEqual(tracker.evaluate(sample(31, at: 100), at: instant(100)), .safe)
+      XCTAssertEqual(tracker.evaluate(sample(29, at: 101), at: instant(101)), .safe)
+      XCTAssertEqual(
+        tracker.evaluate(
+          sample(29, power: power, thermal: .unknown, at: 102),
+          at: instant(102)
+        ),
+        .uncertain(.thermalUnavailable(graceRemaining: .seconds(30)))
+      )
+      XCTAssertEqual(tracker.evaluate(sample(29, at: 103), at: instant(103)), .safe)
+      XCTAssertEqual(tracker.evaluate(sample(29, at: 104), at: instant(104)), .safe)
+    }
+  }
+
   private func sample(
     _ percent: Int,
     power: PowerConnection = .acCharging,
+    thermal: ThermalLevel = .nominal,
     at seconds: UInt64
   ) -> DeviceSafetySnapshot {
     DeviceSafetySnapshot(
       batteryPercent: percent,
       powerConnection: power,
-      thermalLevel: .nominal,
+      thermalLevel: thermal,
       lidState: .closed,
       externalDisplayState: .absent,
       lowPowerModeEnabled: false,
