@@ -88,7 +88,7 @@ public struct DeviceSafetyPolicy: Equatable, Sendable {
   public func evaluate(
     _ snapshot: DeviceSafetySnapshot,
     at now: MonotonicInstant,
-    batteryDepletingOnAC: Bool = false
+    persistentChargingDropOnAC: Bool = false
   ) -> DeviceSafetyVerdict {
     guard let age = now.durationSince(snapshot.capturedAt) else {
       return .stop(.snapshotFromFuture)
@@ -128,7 +128,7 @@ public struct DeviceSafetyPolicy: Equatable, Sendable {
     }
 
     let baseFloor: Int
-    if snapshot.powerConnection == .acCharging, !batteryDepletingOnAC {
+    if snapshot.powerConnection == .acCharging, !persistentChargingDropOnAC {
       baseFloor = Self.minimumOpenBatteryFloor
     } else if effectiveLidClosed {
       baseFloor =

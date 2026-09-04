@@ -43,10 +43,12 @@ public actor SafetySupervisorController {
       originNetwork: originNetwork,
       device: device
     )
+    var tracker = DeviceSafetyTracker(policy: request.safetyPolicy)
+    let initialSafetyVerdict = tracker.evaluate(device, at: clock.now())
     activeRequest = request
     latestDevice = device
-    latestSafetyVerdict = request.safetyPolicy.evaluate(device, at: clock.now())
-    safetyTracker = DeviceSafetyTracker(policy: request.safetyPolicy)
+    latestSafetyVerdict = initialSafetyVerdict
+    safetyTracker = tracker
     sessionID = trip.sessionID
     lastHeartbeat = nil
     lastHelperFault = nil
