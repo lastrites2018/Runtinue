@@ -134,6 +134,17 @@ final class ChargingDropPersistenceTests: XCTestCase {
     )
   }
 
+  func testInvalidBatterySampleCannotSeedChargingTrendBeforeEarlyReturn() {
+    var tracker = DeviceSafetyTracker()
+
+    XCTAssertEqual(
+      tracker.evaluate(sample(101, at: 100), at: instant(100)),
+      .uncertain(.batteryUnavailable(consecutiveFailures: 1, releaseAfter: 3))
+    )
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 101), at: instant(101)), .safe)
+    XCTAssertEqual(tracker.evaluate(sample(29, at: 102), at: instant(102)), .safe)
+  }
+
   private func sample(
     _ percent: Int,
     power: PowerConnection = .acCharging,

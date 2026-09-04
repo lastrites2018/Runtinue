@@ -52,7 +52,10 @@ public struct DeviceSafetyTracker: Sendable {
       lastCountedBatterySnapshot = nil
     }
 
-    if snapshot.powerConnection == .acCharging, let percent = snapshot.batteryPercent {
+    if !batteryUnavailable,
+      snapshot.powerConnection == .acCharging,
+      let percent = snapshot.batteryPercent
+    {
       if let previous = lastChargingBatterySample,
         let elapsed = snapshot.capturedAt.durationSince(previous.time), elapsed > maximumAge
       {
