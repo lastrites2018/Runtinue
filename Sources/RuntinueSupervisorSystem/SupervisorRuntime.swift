@@ -86,6 +86,8 @@ public actor SupervisorRuntime {
   private var lidConflictWasObserved = false
   private var lidConflictEventPending = false
   private var monitorTask: Task<Void, Never>?
+  private var temperatureMonitorTask: Task<Void, Never>?
+  private var latestTemperatureTelemetry: WireTemperatureTelemetry?
 
   public init(
     backend: any SupervisorLeaseBackend,
@@ -140,6 +142,7 @@ public actor SupervisorRuntime {
       return await currentStatus()
     }
     hasStarted = true
+    startTemperatureMonitorIfNeeded()
     switch await backend.releaseExistingOwnedLease() {
     case .released:
       startupRecoveryDetail = nil
@@ -651,6 +654,7 @@ public actor SupervisorRuntime {
   @discardableResult
   public func shutdown() async -> SupervisorStatusWire {
     stopMonitor()
+    stopTemperatureMonitor()
     if let startupRecoveryDetail {
       let wire = makeStartupRecoveryStatus(detail: startupRecoveryDetail)
       return await persist(wire)
@@ -760,14 +764,38 @@ public actor SupervisorRuntime {
     monitorTask = nil
   }
 
-  private func persist(_ status: SupervisorStatusWire) async -> SupervisorStatusWire {
-    let temperatureTelemetry: WireTemperatureTelemetry?
-    if let temperatureSampler {
-      temperatureTelemetry = makeWireTemperatureTelemetry(await temperatureSampler.sample())
-    } else {
-      temperatureTelemetry = nil
+  private func startTemperatureMonitorIfNeeded() {
+    guard temperatureMonitorTask == nil, let temperatureSampler else {
+      return
     }
-    let status = status.withTemperatureTelemetry(temperatureTelemetry)
+    let interval = monitorInterval
+    temperatureMonitorTask = Task.detached(priority: .utility) { [weak self] in
+      while !Task.isCancelled {
+        let snapshot = await temperatureSampler.sample()
+        guard !Task.isCancelled else {
+          return
+        }
+        await self?.publishTemperatureTelemetry(snapshot)
+        do {
+          try await Task.sleep(for: interval)
+        } catch {
+          return
+        }
+      }
+    }
+  }
+
+  private func stopTemperatureMonitor() {
+    temperatureMonitorTask?.cancel()
+    temperatureMonitorTask = nil
+  }
+
+  private func publishTemperatureTelemetry(_ snapshot: TemperatureTelemetrySnapshot) {
+    latestTemperatureTelemetry = makeWireTemperatureTelemetry(snapshot)
+  }
+
+  private func persist(_ status: SupervisorStatusWire) async -> SupervisorStatusWire {
+    let status = status.withTemperatureTelemetry(latestTemperatureTelemetry)
     if lidConflictEventPending {
       lidConflictEventPending = false
       await eventRecorder?.record(.lidStateConflict)
