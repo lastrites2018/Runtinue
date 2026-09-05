@@ -436,9 +436,14 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       lines.append("현재 센서")
       lines.append("배터리: \(device.batteryPercent.map { "\($0)%" } ?? "확인 불가")")
       lines.append("전원: \(device.powerConnection.rawValue)")
-      lines.append("열 상태: \(device.thermalLevel.rawValue)")
+      lines.append("macOS 열 압력: \(device.thermalLevel.rawValue)")
+      lines.append("  부품과 외장 표면의 직접 온도가 아닙니다.")
       lines.append("덮개: \(device.lidState.rawValue)")
       lines.append("외장 화면: \(device.externalDisplayState.rawValue)")
+      lines.append("")
+      lines.append(contentsOf: SupervisorDiagnostics.temperatureDiagnosticLines(
+        status?.temperatureTelemetry
+      ))
       lines.append("")
       lines.append("현재 네트워크")
       lines.append("SSID: \(currentNetwork.ssid ?? "확인 불가")")

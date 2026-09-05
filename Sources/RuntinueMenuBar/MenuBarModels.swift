@@ -1,5 +1,6 @@
 import Foundation
 import RuntinueIPC
+import RuntinueUserSupport
 
 enum MenuBarConfigurationError: Error, Equatable, LocalizedError {
   case hotspotRequired
@@ -316,7 +317,8 @@ struct MenuBarPresentation: Equatable, Sendable {
   init(
     status: SupervisorStatusWire?,
     isCommandInFlight: Bool = false,
-    iconStyle: MenuBarIconStyle = .continuationMark
+    iconStyle: MenuBarIconStyle = .continuationMark,
+    now: Date = Date()
   ) {
     self.iconStyle = iconStyle
     guard !isCommandInFlight else {
@@ -406,8 +408,14 @@ struct MenuBarPresentation: Equatable, Sendable {
       fields.append("배터리 \(battery)%")
     }
     if let thermal = status.thermalLevel {
-      fields.append("열 \(Self.thermal(thermal))")
+      fields.append("macOS 열 압력: \(Self.thermal(thermal))")
     }
+    fields.append(
+      contentsOf: SupervisorDiagnostics.temperatureSummaryFields(
+        status.temperatureTelemetry,
+        now: now
+      )
+    )
     if let detail = status.detail, !detail.isEmpty {
       fields.append(detail)
     }
@@ -428,10 +436,10 @@ struct MenuBarPresentation: Equatable, Sendable {
 
   private static func thermal(_ level: String) -> String {
     switch level {
-    case "nominal": "정상"
-    case "fair": "약간 높음"
-    case "serious": "높음"
-    case "critical": "매우 높음"
+    case "nominal": "제한 신호 없음 (nominal)"
+    case "fair": "약간 상승 (fair)"
+    case "serious": "높음 (serious)"
+    case "critical": "매우 높음 (critical)"
     case "unknown": "확인 불가"
     default: level
     }
