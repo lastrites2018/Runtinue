@@ -25,6 +25,7 @@ struct RuntinueSupervisorDaemon {
     let runtime = SupervisorRuntime(
       backend: backend,
       sampler: MacEnvironmentSampler(),
+      temperatureSampler: MacTemperatureTelemetrySampler(),
       statusCache: FileSupervisorStatusCache(),
       historyRecorder: FileSupervisorHistoryStore(),
       eventRecorder: eventRecorder,
