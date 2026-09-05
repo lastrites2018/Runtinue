@@ -236,6 +236,92 @@ public struct WireObservationStatus: Codable, Equatable, Sendable {
   }
 }
 
+public enum WireTemperatureComponent: String, Codable, Equatable, Sendable {
+  case cpuInternal
+  case gpuInternal
+}
+
+public enum WireTemperatureTelemetryStatus: String, Codable, Equatable, Sendable {
+  case available
+  case partial
+  case unsupportedModel
+  case mappingUnverified
+  case temporarilyUnavailable
+}
+
+public enum WireTemperatureTelemetrySource: String, Codable, Equatable, Sendable {
+  case appleSMC
+}
+
+public enum WireTemperatureMappingQuality: String, Codable, Equatable, Sendable {
+  case singleDeviceValidated
+}
+
+public struct WireTemperatureComponentObservation: Codable, Equatable, Sendable {
+  public let component: WireTemperatureComponent
+  public let minimumCelsius: Double?
+  public let maximumCelsius: Double?
+  public let validSensorCount: Int
+  public let expectedSensorCount: Int
+  public let validSensorIDs: [String]
+
+  public init(
+    component: WireTemperatureComponent,
+    minimumCelsius: Double?,
+    maximumCelsius: Double?,
+    validSensorCount: Int,
+    expectedSensorCount: Int,
+    validSensorIDs: [String]
+  ) {
+    self.component = component
+    self.minimumCelsius = minimumCelsius
+    self.maximumCelsius = maximumCelsius
+    self.validSensorCount = validSensorCount
+    self.expectedSensorCount = expectedSensorCount
+    self.validSensorIDs = validSensorIDs
+  }
+}
+
+public struct WireTemperatureTelemetry: Codable, Equatable, Sendable {
+  public let status: WireTemperatureTelemetryStatus
+  public let source: WireTemperatureTelemetrySource
+  public let machineModel: String?
+  public let operatingSystemBuild: String?
+  public let mappingRevision: String?
+  public let mappingQuality: WireTemperatureMappingQuality?
+  public let samplingIntervalSeconds: Double?
+  public let sampledAt: Date
+  public let validUntil: Date?
+  public let lastSuccessfulAt: Date?
+  public let components: [WireTemperatureComponentObservation]
+
+  public init(
+    status: WireTemperatureTelemetryStatus,
+    source: WireTemperatureTelemetrySource,
+    machineModel: String?,
+    operatingSystemBuild: String? = nil,
+    mappingRevision: String?,
+    mappingQuality: WireTemperatureMappingQuality?,
+    samplingIntervalSeconds: Double? = nil,
+    sampledAt: Date,
+    validUntil: Date?,
+    lastSuccessfulAt: Date?,
+    components: [WireTemperatureComponentObservation]
+  ) {
+    self.status = status
+    self.source = source
+    self.machineModel = machineModel
+    self.operatingSystemBuild = operatingSystemBuild
+    self.mappingRevision = mappingRevision
+    self.mappingQuality = mappingQuality
+    self.samplingIntervalSeconds = samplingIntervalSeconds
+    self.sampledAt = sampledAt
+    self.validUntil = validUntil
+    self.lastSuccessfulAt = lastSuccessfulAt
+    self.components = components
+  }
+}
+
 public struct SupervisorStatusWire: Codable, Equatable, Sendable {
   public let protocolVersion: Int
   public let phase: WireTripPhase
@@ -249,6 +335,7 @@ public struct SupervisorStatusWire: Codable, Equatable, Sendable {
   public let lidState: String?
   public let stopReason: WireSessionStopReason?
   public let observation: WireObservationStatus?
+  public let temperatureTelemetry: WireTemperatureTelemetry?
   public let detail: String?
   public let updatedAt: Date
 
@@ -265,6 +352,7 @@ public struct SupervisorStatusWire: Codable, Equatable, Sendable {
     lidState: String?,
     stopReason: WireSessionStopReason? = nil,
     observation: WireObservationStatus? = nil,
+    temperatureTelemetry: WireTemperatureTelemetry? = nil,
     detail: String?,
     updatedAt: Date
   ) {
@@ -280,6 +368,7 @@ public struct SupervisorStatusWire: Codable, Equatable, Sendable {
     self.lidState = lidState
     self.stopReason = stopReason
     self.observation = observation
+    self.temperatureTelemetry = temperatureTelemetry
     self.detail = detail
     self.updatedAt = updatedAt
   }
@@ -289,7 +378,20 @@ public struct SupervisorStatusWire: Codable, Equatable, Sendable {
       protocolVersion: protocolVersion, phase: phase, mode: mode, sessionID: sessionID,
       verdict: verdict, closedLidAllowed: closedLidAllowed, remainingSeconds: remainingSeconds,
       batteryPercent: batteryPercent, thermalLevel: thermalLevel, lidState: lidState,
-      stopReason: stopReason, observation: observation, detail: detail, updatedAt: updatedAt
+      stopReason: stopReason, observation: observation,
+      temperatureTelemetry: temperatureTelemetry, detail: detail, updatedAt: updatedAt
+    )
+  }
+
+  public func withTemperatureTelemetry(
+    _ temperatureTelemetry: WireTemperatureTelemetry?
+  ) -> SupervisorStatusWire {
+    SupervisorStatusWire(
+      protocolVersion: protocolVersion, phase: phase, mode: mode, sessionID: sessionID,
+      verdict: verdict, closedLidAllowed: closedLidAllowed, remainingSeconds: remainingSeconds,
+      batteryPercent: batteryPercent, thermalLevel: thermalLevel, lidState: lidState,
+      stopReason: stopReason, observation: observation,
+      temperatureTelemetry: temperatureTelemetry, detail: detail, updatedAt: updatedAt
     )
   }
 }

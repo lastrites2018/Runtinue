@@ -6,10 +6,59 @@ import XCTest
 @testable import RuntinueIPC
 @testable import RuntinueSupervisorCore
 @testable import RuntinueSupervisorSystem
+@testable import RuntinueSystem
 @testable import RuntinueUserSupport
 
 @MainActor
 final class SupervisorRuntimeTests: XCTestCase {
+  func testSafetyReleaseDoesNotWaitForTemperatureTelemetry() async throws {
+    let clock = RuntimeManualClock()
+    let backend = RuntimeFakeBackend(clock: clock)
+    let temperatureSampler = RuntimeBlockingTemperatureSampler()
+    let runtime = SupervisorRuntime(
+      backend: backend,
+      sampler: RuntimeFakeSampler(snapshots: [
+        runtimeSnapshot(ssid: "Office", clock: clock),
+        runtimeSnapshot(ssid: "iPhone", clock: clock),
+        runtimeSnapshot(ssid: "iPhone", clock: clock, thermal: .fair, lid: .closed),
+      ]),
+      temperatureSampler: temperatureSampler,
+      statusCache: RuntimeFakeCache(),
+      ownerUID: 501,
+      clock: clock,
+      automaticMonitoring: false
+    )
+    await runtime.recordWiFiObservation(ssid: "Office", interfaceName: "en0")
+    _ = try await runtime.startTrip(
+      expectedHotspotSSID: "iPhone",
+      hotspotHandoffTimeout: .seconds(900),
+      hardCap: .seconds(3_600)
+    )
+    await runtime.recordWiFiObservation(ssid: "iPhone", interfaceName: "en0")
+    let active = await runtime.monitorOnce()
+    XCTAssertEqual(active.verdict, .protected)
+
+    await temperatureSampler.blockNextSample()
+    let monitoring = Task { await runtime.monitorOnce() }
+    for _ in 0..<1_000 {
+      if await temperatureSampler.isBlocked { break }
+      await Task.yield()
+    }
+    let blocked = await temperatureSampler.isBlocked
+    let beforeTemperatureCompletion = await backend.snapshot()
+    await temperatureSampler.unblock()
+    let stopped = await monitoring.value
+
+    XCTAssertTrue(blocked, "temperature fault injection must block status enrichment")
+    XCTAssertEqual(
+      beforeTemperatureCompletion.releaseCount,
+      1,
+      "unsafe thermal pressure must release before direct temperature sampling completes"
+    )
+    XCTAssertEqual(stopped.verdict, .unsafe)
+    XCTAssertEqual(stopped.temperatureTelemetry?.status, .temporarilyUnavailable)
+  }
+
   func testSafetyReleaseDoesNotWaitForLidConflictEventPersistence() async throws {
     let clock = RuntimeManualClock()
     let backend = RuntimeFakeBackend(clock: clock)
@@ -922,6 +971,43 @@ private actor RuntimeFakeSampler: SupervisorEnvironmentSampling {
       return snapshots[0]
     }
     return snapshots.removeFirst()
+  }
+}
+
+private actor RuntimeBlockingTemperatureSampler: TemperatureTelemetrySampling {
+  private var shouldBlockNextSample = false
+  private var continuation: CheckedContinuation<Void, Never>?
+  private(set) var isBlocked = false
+
+  func blockNextSample() {
+    shouldBlockNextSample = true
+  }
+
+  func sample() async -> TemperatureTelemetrySnapshot {
+    if shouldBlockNextSample {
+      shouldBlockNextSample = false
+      isBlocked = true
+      await withCheckedContinuation { continuation = $0 }
+      isBlocked = false
+    }
+    let sampledAt = Date(timeIntervalSince1970: 1_000)
+    return TemperatureTelemetrySnapshot(
+      status: .temporarilyUnavailable,
+      source: .appleSMC,
+      machineModel: "Mac17,8",
+      operatingSystemBuild: "25F84",
+      mappingRevision: "Mac17,8-apple-smc-r1",
+      mappingQuality: .singleDeviceValidated,
+      sampledAt: sampledAt,
+      validUntil: nil,
+      lastSuccessfulAt: nil,
+      components: []
+    )
+  }
+
+  func unblock() {
+    continuation?.resume()
+    continuation = nil
   }
 }
 

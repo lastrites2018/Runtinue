@@ -1,5 +1,6 @@
 import Foundation
 import RuntinueIPC
+import RuntinueUserSupport
 
 enum MenuBarConfigurationError: Error, Equatable, LocalizedError {
   case hotspotRequired
@@ -316,7 +317,8 @@ struct MenuBarPresentation: Equatable, Sendable {
   init(
     status: SupervisorStatusWire?,
     isCommandInFlight: Bool = false,
-    iconStyle: MenuBarIconStyle = .continuationMark
+    iconStyle: MenuBarIconStyle = .continuationMark,
+    now: Date = Date()
   ) {
     self.iconStyle = iconStyle
     guard !isCommandInFlight else {
@@ -408,6 +410,12 @@ struct MenuBarPresentation: Equatable, Sendable {
     if let thermal = status.thermalLevel {
       fields.append("macOS 열 압력: \(Self.thermal(thermal))")
     }
+    fields.append(
+      contentsOf: SupervisorDiagnostics.temperatureSummaryFields(
+        status.temperatureTelemetry,
+        now: now
+      )
+    )
     if let detail = status.detail, !detail.isEmpty {
       fields.append(detail)
     }

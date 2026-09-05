@@ -2,6 +2,7 @@ import Foundation
 import RuntinueCore
 import RuntinueIPC
 import RuntinueSupervisorCore
+import RuntinueSystem
 import RuntinueUserSupport
 
 public protocol SupervisorEnvironmentSampling: Sendable {
@@ -62,6 +63,7 @@ public actor SupervisorRuntime {
   private let directController: DirectSafetyLeaseController
   private let deskController: DeskModeController
   private let sampler: any SupervisorEnvironmentSampling
+  private let temperatureSampler: (any TemperatureTelemetrySampling)?
   private let statusCache: any SupervisorStatusCaching
   private let historyRecorder: (any SupervisorHistoryRecording)?
   private let eventRecorder: SupervisorEventRecorder?
@@ -88,6 +90,7 @@ public actor SupervisorRuntime {
   public init(
     backend: any SupervisorLeaseBackend,
     sampler: any SupervisorEnvironmentSampling,
+    temperatureSampler: (any TemperatureTelemetrySampling)? = nil,
     statusCache: any SupervisorStatusCaching,
     historyRecorder: (any SupervisorHistoryRecording)? = nil,
     eventRecorder: SupervisorEventRecorder? = nil,
@@ -121,6 +124,7 @@ public actor SupervisorRuntime {
       clock: clock
     )
     self.sampler = sampler
+    self.temperatureSampler = temperatureSampler
     self.statusCache = statusCache
     self.historyRecorder = historyRecorder
     self.eventRecorder = eventRecorder
@@ -757,6 +761,13 @@ public actor SupervisorRuntime {
   }
 
   private func persist(_ status: SupervisorStatusWire) async -> SupervisorStatusWire {
+    let temperatureTelemetry: WireTemperatureTelemetry?
+    if let temperatureSampler {
+      temperatureTelemetry = makeWireTemperatureTelemetry(await temperatureSampler.sample())
+    } else {
+      temperatureTelemetry = nil
+    }
+    let status = status.withTemperatureTelemetry(temperatureTelemetry)
     if lidConflictEventPending {
       lidConflictEventPending = false
       await eventRecorder?.record(.lidStateConflict)
@@ -895,6 +906,79 @@ public actor SupervisorRuntime {
       detail: detail,
       updatedAt: Date()
     )
+  }
+
+  private func makeWireTemperatureTelemetry(
+    _ snapshot: TemperatureTelemetrySnapshot
+  ) -> WireTemperatureTelemetry {
+    WireTemperatureTelemetry(
+      status: wireTemperatureStatus(snapshot.status),
+      source: wireTemperatureSource(snapshot.source),
+      machineModel: snapshot.machineModel,
+      operatingSystemBuild: snapshot.operatingSystemBuild,
+      mappingRevision: snapshot.mappingRevision,
+      mappingQuality: snapshot.mappingQuality.map(wireTemperatureMappingQuality),
+      samplingIntervalSeconds: monitorInterval.secondsValue,
+      sampledAt: snapshot.sampledAt,
+      validUntil: snapshot.validUntil,
+      lastSuccessfulAt: snapshot.lastSuccessfulAt,
+      components: snapshot.components.map { observation in
+        WireTemperatureComponentObservation(
+          component: wireTemperatureComponent(observation.component),
+          minimumCelsius: observation.minimumCelsius,
+          maximumCelsius: observation.maximumCelsius,
+          validSensorCount: observation.validSensorCount,
+          expectedSensorCount: observation.expectedSensorCount,
+          validSensorIDs: observation.validSensorIDs
+        )
+      }
+    )
+  }
+
+  private func wireTemperatureStatus(
+    _ status: TemperatureTelemetryStatus
+  ) -> WireTemperatureTelemetryStatus {
+    switch status {
+    case .available:
+      .available
+    case .partial:
+      .partial
+    case .unsupportedModel:
+      .unsupportedModel
+    case .mappingUnverified:
+      .mappingUnverified
+    case .temporarilyUnavailable:
+      .temporarilyUnavailable
+    }
+  }
+
+  private func wireTemperatureSource(
+    _ source: TemperatureTelemetrySource
+  ) -> WireTemperatureTelemetrySource {
+    switch source {
+    case .appleSMC:
+      .appleSMC
+    }
+  }
+
+  private func wireTemperatureMappingQuality(
+    _ quality: TemperatureMappingQuality
+  ) -> WireTemperatureMappingQuality {
+    switch quality {
+    case .singleDeviceValidated:
+      .singleDeviceValidated
+    }
+  }
+
+  private func wireTemperatureComponent(
+    _ component: TemperatureComponent
+  ) -> WireTemperatureComponent {
+    switch component {
+    case .cpuInternal:
+      .cpuInternal
+    case .gpuInternal:
+      .gpuInternal
+    }
   }
 
   private func makeStartupRecoveryStatus(detail: String) -> SupervisorStatusWire {

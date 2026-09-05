@@ -441,6 +441,10 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       lines.append("덮개: \(device.lidState.rawValue)")
       lines.append("외장 화면: \(device.externalDisplayState.rawValue)")
       lines.append("")
+      lines.append(contentsOf: SupervisorDiagnostics.temperatureDiagnosticLines(
+        status?.temperatureTelemetry
+      ))
+      lines.append("")
       lines.append("현재 네트워크")
       lines.append("SSID: \(currentNetwork.ssid ?? "확인 불가")")
       lines.append("인터페이스: \(currentNetwork.interfaceName ?? "확인 불가")")
