@@ -122,7 +122,8 @@ struct RuntinueCLI {
     print("기기")
     print("  배터리: \(device.batteryPercent.map(String.init) ?? "확인 불가")%")
     print("  전원: \(device.powerConnection.rawValue)")
-    print("  열 상태: \(device.thermalLevel.rawValue)")
+    print("  macOS 열 압력: \(device.thermalLevel.rawValue)")
+    print("    부품과 외장 표면의 직접 온도가 아닙니다.")
     print("  덮개: \(device.lidState.rawValue)")
     print("  외장 화면: \(device.externalDisplayState.rawValue)")
     print("  저전력 모드: \(device.lowPowerModeEnabled ? "켜짐" : "꺼짐")")
@@ -192,7 +193,8 @@ struct RuntinueCLI {
     print("현재 센서")
     print("  배터리: \(device.batteryPercent.map { "\($0)%" } ?? "확인 불가")")
     print("  전원: \(device.powerConnection.rawValue)")
-    print("  열 상태: \(device.thermalLevel.rawValue)")
+    print("  macOS 열 압력: \(device.thermalLevel.rawValue)")
+    print("    부품과 외장 표면의 직접 온도가 아닙니다.")
     print("  덮개: \(device.lidState.rawValue)")
 
     let currentNetwork = await network
@@ -409,7 +411,7 @@ struct RuntinueCLI {
     if status.batteryPercent != nil || status.thermalLevel != nil {
       print(
         "기기: 배터리 \(status.batteryPercent.map { "\($0)%" } ?? "확인 불가"), "
-          + "열 상태 \(status.thermalLevel ?? "확인 불가")"
+          + "macOS 열 압력 \(status.thermalLevel ?? "확인 불가")"
       )
     }
   }
@@ -497,9 +499,9 @@ struct RuntinueCLI {
     case .staleSnapshot:
       "센서 정보가 오래됨"
     case .thermalUnavailable:
-      "열 상태를 확인할 수 없음"
+      "macOS 열 압력을 확인할 수 없음"
     case .thermalLimitReached(let observed, let cutoff):
-      "열 상태 \(observed.rawValue), 중단 기준 \(cutoff.rawValue)"
+      "macOS 열 압력 \(observed.rawValue), 중단 기준 \(cutoff.rawValue)"
     case .batteryUnavailable:
       "배터리 잔량을 확인할 수 없음"
     case .batteryBelowFloor(let observed, let floor):

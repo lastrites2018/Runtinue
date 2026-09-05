@@ -456,7 +456,10 @@ final class MenuBarModelsTests: XCTestCase {
     )
 
     XCTAssertEqual(presentation.statusIndicator, "✓")
-    XCTAssertTrue(presentation.detail.contains("열 정상"))
+    XCTAssertTrue(
+      presentation.detail.contains("macOS 열 압력: 제한 신호 없음 (nominal)")
+    )
+    XCTAssertFalse(presentation.detail.contains("열 정상"))
     XCTAssertTrue(presentation.detail.contains("관찰 기록 경고"))
   }
 
