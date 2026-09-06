@@ -347,6 +347,9 @@ final class SafetyChecklistView: NSView {
 @MainActor
 final class ProtectionStatusHeaderView: NSView {
   private static let width: CGFloat = 320
+  private static let horizontalInset: CGFloat = 12
+  private static let verticalInset: CGFloat = 10
+  private static let contentWidth = width - (horizontalInset * 2)
   private let iconView = NSImageView()
   private let headlineLabel = NSTextField(labelWithString: "")
   private let guidanceLabel = NSTextField(labelWithString: "")
@@ -355,15 +358,10 @@ final class ProtectionStatusHeaderView: NSView {
   private let contentStack = NSStackView()
 
   override var intrinsicContentSize: NSSize {
-    let height: CGFloat
-    if !checklistView.isHidden {
-      height = detailLabel.isHidden ? 130 : 158
-    } else if !detailLabel.isHidden {
-      height = 92
-    } else {
-      height = 68
-    }
-    return NSSize(width: Self.width, height: height)
+    NSSize(
+      width: Self.width,
+      height: ceil(contentStack.fittingSize.height + (Self.verticalInset * 2))
+    )
   }
 
   convenience init() {
@@ -426,7 +424,8 @@ final class ProtectionStatusHeaderView: NSView {
     detailLabel.font = .systemFont(ofSize: 10.5, weight: .regular)
     detailLabel.textColor = .secondaryLabelColor
     detailLabel.lineBreakMode = .byWordWrapping
-    detailLabel.maximumNumberOfLines = 2
+    detailLabel.maximumNumberOfLines = 0
+    detailLabel.preferredMaxLayoutWidth = Self.contentWidth
     detailLabel.setAccessibilityIdentifier("runtinue.header.detail")
 
     let titleStack = NSStackView(views: [headlineLabel, guidanceLabel])
@@ -450,10 +449,10 @@ final class ProtectionStatusHeaderView: NSView {
     contentStack.translatesAutoresizingMaskIntoConstraints = false
     checklistView.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      contentStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-      contentStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-      contentStack.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-      contentStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
+      contentStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.horizontalInset),
+      contentStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.horizontalInset),
+      contentStack.topAnchor.constraint(equalTo: topAnchor, constant: Self.verticalInset),
+      contentStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.verticalInset),
       checklistView.widthAnchor.constraint(equalToConstant: SafetyChecklistGeometry.width),
       checklistView.heightAnchor.constraint(equalToConstant: SafetyChecklistGeometry.height),
     ])

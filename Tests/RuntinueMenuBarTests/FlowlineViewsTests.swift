@@ -91,7 +91,52 @@ final class SafetyChecklistViewsTests: XCTestCase {
       XCTAssertEqual(checklist.presentation?.items.last?.state, .verified)
       XCTAssertTrue(checklist.accessibilityLabel()?.contains("수면 보호 적용됨") == true)
       XCTAssertEqual(header.frame.width, 320)
-      XCTAssertEqual(header.frame.height, 158)
+      XCTAssertEqual(header.frame.height, 154)
+    }
+  }
+
+  func testHeaderExpandsToShowAllStatusDetailsWithoutClipping() async throws {
+    try await MainActor.run {
+      let sampledAt = Date(timeIntervalSince1970: 1_000)
+      let status = SupervisorStatusWire(
+        phase: .active,
+        mode: .adaptive,
+        sessionID: UUID(),
+        verdict: .protected,
+        closedLidAllowed: true,
+        remainingSeconds: 5_400,
+        batteryPercent: 80,
+        thermalLevel: "nominal",
+        lidState: "open",
+        observation: WireObservationStatus(
+          buildID: nil,
+          issues: [.eventsUnavailable]
+        ),
+        temperatureTelemetry: temperatureTelemetry(sampledAt: sampledAt),
+        detail: "adaptive activity source=codex, session=commute",
+        updatedAt: sampledAt
+      )
+      let header = ProtectionStatusHeaderView()
+      header.update(MenuBarPresentation(status: status, now: sampledAt))
+      header.layoutSubtreeIfNeeded()
+
+      let detail = try XCTUnwrap(
+        findView(identifier: "runtinue.header.detail", in: header) as? NSTextField
+      )
+      let measurement = NSTextField(labelWithString: detail.stringValue)
+      measurement.font = detail.font
+      measurement.lineBreakMode = .byWordWrapping
+      measurement.maximumNumberOfLines = 0
+      measurement.preferredMaxLayoutWidth = detail.bounds.width
+
+      XCTAssertTrue(detail.stringValue.hasSuffix("관찰 기록 경고, 진단 정보를 확인하세요."))
+      XCTAssertEqual(detail.maximumNumberOfLines, 0)
+      XCTAssertGreaterThan(measurement.intrinsicContentSize.height, 28)
+      XCTAssertGreaterThanOrEqual(
+        detail.bounds.height + 0.5,
+        measurement.intrinsicContentSize.height
+      )
+      XCTAssertGreaterThan(header.frame.height, 92)
     }
   }
 
@@ -167,6 +212,38 @@ private func protectedTripStatus(closedLidAllowed: Bool) -> SupervisorStatusWire
     lidState: "open",
     detail: nil,
     updatedAt: Date(timeIntervalSince1970: 1)
+  )
+}
+
+private func temperatureTelemetry(sampledAt: Date) -> WireTemperatureTelemetry {
+  WireTemperatureTelemetry(
+    status: .available,
+    source: .appleSMC,
+    machineModel: "Mac17,8",
+    operatingSystemBuild: "25F84",
+    mappingRevision: "Mac17,8-apple-smc-r1",
+    mappingQuality: .singleDeviceValidated,
+    sampledAt: sampledAt,
+    validUntil: sampledAt.addingTimeInterval(15),
+    lastSuccessfulAt: sampledAt,
+    components: [
+      WireTemperatureComponentObservation(
+        component: .cpuInternal,
+        minimumCelsius: 69,
+        maximumCelsius: 74,
+        validSensorCount: 18,
+        expectedSensorCount: 18,
+        validSensorIDs: ["Tp00"]
+      ),
+      WireTemperatureComponentObservation(
+        component: .gpuInternal,
+        minimumCelsius: 61,
+        maximumCelsius: 66,
+        validSensorCount: 7,
+        expectedSensorCount: 7,
+        validSensorIDs: ["Tg0U"]
+      ),
+    ]
   )
 }
 
