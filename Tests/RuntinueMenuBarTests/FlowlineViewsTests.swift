@@ -130,6 +130,11 @@ final class SafetyChecklistViewsTests: XCTestCase {
       measurement.preferredMaxLayoutWidth = detail.bounds.width
 
       XCTAssertTrue(detail.stringValue.hasSuffix("관찰 기록 경고, 진단 정보를 확인하세요."))
+      XCTAssertTrue(
+        detail.stringValue.contains(
+          "\nadaptive activity source=codex, session=commute\n관찰 기록 경고"
+        )
+      )
       XCTAssertEqual(detail.maximumNumberOfLines, 0)
       XCTAssertGreaterThan(measurement.intrinsicContentSize.height, 28)
       XCTAssertGreaterThanOrEqual(

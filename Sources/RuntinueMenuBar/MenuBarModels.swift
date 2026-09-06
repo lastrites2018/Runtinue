@@ -400,29 +400,31 @@ struct MenuBarPresentation: Equatable, Sendable {
       tone = .neutral
     }
 
-    var fields: [String] = []
+    var statusFields: [String] = []
     if let remaining = status.remainingSeconds {
-      fields.append("남은 시간 \(Self.duration(remaining))")
+      statusFields.append("남은 시간 \(Self.duration(remaining))")
     }
     if let battery = status.batteryPercent {
-      fields.append("배터리 \(battery)%")
+      statusFields.append("배터리 \(battery)%")
     }
     if let thermal = status.thermalLevel {
-      fields.append("macOS 열 압력: \(Self.thermal(thermal))")
+      statusFields.append("macOS 열 압력: \(Self.thermal(thermal))")
     }
-    fields.append(
+    statusFields.append(
       contentsOf: SupervisorDiagnostics.temperatureSummaryFields(
         status.temperatureTelemetry,
         now: now
       )
     )
+
+    var detailLines = [statusFields.joined(separator: " | ")]
     if let detail = status.detail, !detail.isEmpty {
-      fields.append(detail)
+      detailLines.append(detail)
     }
     if let issues = status.observation?.issues, !issues.isEmpty {
-      fields.append("관찰 기록 경고, 진단 정보를 확인하세요.")
+      detailLines.append("관찰 기록 경고, 진단 정보를 확인하세요.")
     }
-    self.detail = fields.joined(separator: " | ")
+    self.detail = detailLines.filter { !$0.isEmpty }.joined(separator: "\n")
   }
 
   private static func mode(_ mode: WireSessionMode) -> String {
