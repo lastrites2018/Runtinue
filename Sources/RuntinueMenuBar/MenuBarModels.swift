@@ -301,6 +301,8 @@ enum MenuBarCriticalWarningPolicy {
 }
 
 struct MenuBarPresentation: Equatable, Sendable {
+  private static let supplementalDetailCharacterLimit = 160
+
   let statusIndicator: String
   let summary: String
   let headline: String
@@ -418,13 +420,30 @@ struct MenuBarPresentation: Equatable, Sendable {
     )
 
     var detailLines = [statusFields.joined(separator: " | ")]
-    if let detail = status.detail, !detail.isEmpty {
+    if let detail = Self.supplementalDetail(status.detail) {
       detailLines.append(detail)
     }
     if let issues = status.observation?.issues, !issues.isEmpty {
       detailLines.append("관찰 기록 경고, 진단 정보를 확인하세요.")
     }
     self.detail = detailLines.filter { !$0.isEmpty }.joined(separator: "\n")
+  }
+
+  private static func supplementalDetail(_ value: String?) -> String? {
+    guard let value else {
+      return nil
+    }
+    let singleLine = value
+      .split(whereSeparator: { $0.isNewline })
+      .joined(separator: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !singleLine.isEmpty else {
+      return nil
+    }
+    guard singleLine.count > supplementalDetailCharacterLimit else {
+      return singleLine
+    }
+    return String(singleLine.prefix(supplementalDetailCharacterLimit)) + "…"
   }
 
   private static func mode(_ mode: WireSessionMode) -> String {

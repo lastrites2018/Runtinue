@@ -463,6 +463,26 @@ final class MenuBarModelsTests: XCTestCase {
     XCTAssertTrue(presentation.detail.contains("관찰 기록 경고"))
   }
 
+  func testSupplementalDetailCannotGrowTheMenuWithoutBoundOrHideAWarning() {
+    let presentation = MenuBarPresentation(
+      status: status(
+        verdict: .protected,
+        closedLidAllowed: true,
+        observation: WireObservationStatus(
+          buildID: nil,
+          issues: [.eventsUnavailable]
+        ),
+        detail: "activity source\n" + String(repeating: "x", count: 2_048)
+      )
+    )
+    let lines = presentation.detail.split(separator: "\n", omittingEmptySubsequences: false)
+
+    XCTAssertEqual(lines.count, 3)
+    XCTAssertEqual(lines[1].count, 161)
+    XCTAssertTrue(lines[1].hasSuffix("…"))
+    XCTAssertEqual(lines.last, "관찰 기록 경고, 진단 정보를 확인하세요.")
+  }
+
   func testFreshDirectTemperaturesAreSeparateFromMacOSThermalPressure() {
     let sampledAt = Date(timeIntervalSince1970: 1_000)
     let presentation = MenuBarPresentation(
@@ -547,7 +567,8 @@ private func status(
   mode: WireSessionMode = .trip,
   sessionID: UUID? = UUID(),
   observation: WireObservationStatus? = nil,
-  temperatureTelemetry: WireTemperatureTelemetry? = nil
+  temperatureTelemetry: WireTemperatureTelemetry? = nil,
+  detail: String? = nil
 ) -> SupervisorStatusWire {
   SupervisorStatusWire(
     phase: phase ?? (verdict == .waitingForHotspot ? .waitingForHotspot : .active),
@@ -561,7 +582,7 @@ private func status(
     lidState: "open",
     observation: observation,
     temperatureTelemetry: temperatureTelemetry,
-    detail: nil,
+    detail: detail,
     updatedAt: Date(timeIntervalSince1970: 1)
   )
 }
