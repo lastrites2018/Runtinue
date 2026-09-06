@@ -46,6 +46,69 @@ final class WireContractTests: XCTestCase {
     )
   }
 
+  func testTemperatureTelemetryRoundTripsWithoutBreakingLegacyStatus() throws {
+    let sampledAt = Date(timeIntervalSince1970: 1_000)
+    let telemetry = WireTemperatureTelemetry(
+      status: .available,
+      source: .appleSMC,
+      machineModel: "Mac17,8",
+      operatingSystemBuild: "25F84",
+      mappingRevision: "Mac17,8-apple-smc-r1",
+      mappingQuality: .singleDeviceValidated,
+      samplingIntervalSeconds: 5,
+      sampledAt: sampledAt,
+      validUntil: sampledAt.addingTimeInterval(15),
+      lastSuccessfulAt: sampledAt,
+      components: [
+        WireTemperatureComponentObservation(
+          component: .cpuInternal,
+          minimumCelsius: 59,
+          maximumCelsius: 74,
+          validSensorCount: 18,
+          expectedSensorCount: 18,
+          validSensorIDs: ["Tp00", "Tp04"]
+        ),
+        WireTemperatureComponentObservation(
+          component: .gpuInternal,
+          minimumCelsius: 52,
+          maximumCelsius: 66,
+          validSensorCount: 7,
+          expectedSensorCount: 7,
+          validSensorIDs: ["Tg0U", "Tg0X"]
+        ),
+      ]
+    )
+    let current = SupervisorStatusWire(
+      phase: .active,
+      mode: .trip,
+      sessionID: UUID(),
+      verdict: .protected,
+      closedLidAllowed: true,
+      remainingSeconds: 600,
+      batteryPercent: 80,
+      thermalLevel: "nominal",
+      lidState: "closed",
+      observation: WireObservationStatus(buildID: "build", issues: []),
+      temperatureTelemetry: telemetry,
+      detail: nil,
+      updatedAt: sampledAt
+    )
+
+    let currentData = try JSONEncoder().encode(current)
+    XCTAssertEqual(try JSONDecoder().decode(SupervisorStatusWire.self, from: currentData), current)
+    let legacyDecoded = try JSONDecoder().decode(LegacySupervisorStatusWire.self, from: currentData)
+    XCTAssertEqual(legacyDecoded.phase, .active)
+    XCTAssertEqual(legacyDecoded.thermalLevel, "nominal")
+
+    let legacyData = try JSONEncoder().encode(legacyDecoded)
+    XCTAssertNil(
+      try JSONDecoder().decode(SupervisorStatusWire.self, from: legacyData)
+        .temperatureTelemetry
+    )
+    XCTAssertEqual(current.withObservation(nil).temperatureTelemetry, telemetry)
+    XCTAssertEqual(current.withTemperatureTelemetry(nil).observation, current.observation)
+  }
+
   func testAcquireRequestRoundTripsWithoutOwnerUID() throws {
     let request = AcquireLeaseWireRequest(
       leaseID: UUID(),
@@ -245,4 +308,21 @@ final class WireContractTests: XCTestCase {
       )
     )
   }
+}
+
+private struct LegacySupervisorStatusWire: Codable {
+  let protocolVersion: Int
+  let phase: WireTripPhase
+  let mode: WireSessionMode
+  let sessionID: UUID?
+  let verdict: WireProtectionVerdict
+  let closedLidAllowed: Bool
+  let remainingSeconds: Double?
+  let batteryPercent: Int?
+  let thermalLevel: String?
+  let lidState: String?
+  let stopReason: WireSessionStopReason?
+  let observation: WireObservationStatus?
+  let detail: String?
+  let updatedAt: Date
 }

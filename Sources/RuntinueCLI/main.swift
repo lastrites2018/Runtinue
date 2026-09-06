@@ -111,6 +111,7 @@ struct RuntinueCLI {
     let clock = SystemContinuousClock()
     let network = await MacNetworkProbe(clock: clock).snapshot(confirmInternet: true)
     let device = MacDeviceProbe(clock: clock).snapshot()
+    let temperature = await MacTemperatureTelemetrySampler().sample()
     let verdict = DeviceSafetyPolicy().evaluate(device, at: clock.now())
 
     print("네트워크")
@@ -122,10 +123,12 @@ struct RuntinueCLI {
     print("기기")
     print("  배터리: \(device.batteryPercent.map(String.init) ?? "확인 불가")%")
     print("  전원: \(device.powerConnection.rawValue)")
-    print("  열 상태: \(device.thermalLevel.rawValue)")
+    print("  macOS 열 압력: \(device.thermalLevel.rawValue)")
+    print("    부품과 외장 표면의 직접 온도가 아닙니다.")
     print("  덮개: \(device.lidState.rawValue)")
     print("  외장 화면: \(device.externalDisplayState.rawValue)")
     print("  저전력 모드: \(device.lowPowerModeEnabled ? "켜짐" : "꺼짐")")
+    printTemperature(temperature)
     print("판정: \(describe(verdict))")
   }
 
@@ -156,6 +159,8 @@ struct RuntinueCLI {
   private static func diagnose() async {
     let clock = SystemContinuousClock()
     async let network = MacNetworkProbe(clock: clock).snapshot(confirmInternet: true)
+    let temperatureSampler = MacTemperatureTelemetrySampler()
+    async let temperature = temperatureSampler.sample()
     let device = MacDeviceProbe(clock: clock).snapshot()
     let sleepOverride = MacSleepOverrideProbe().read()
 
@@ -192,8 +197,10 @@ struct RuntinueCLI {
     print("현재 센서")
     print("  배터리: \(device.batteryPercent.map { "\($0)%" } ?? "확인 불가")")
     print("  전원: \(device.powerConnection.rawValue)")
-    print("  열 상태: \(device.thermalLevel.rawValue)")
+    print("  macOS 열 압력: \(device.thermalLevel.rawValue)")
+    print("    부품과 외장 표면의 직접 온도가 아닙니다.")
     print("  덮개: \(device.lidState.rawValue)")
+    printTemperature(await temperature)
 
     let currentNetwork = await network
     print("현재 네트워크")
@@ -409,9 +416,78 @@ struct RuntinueCLI {
     if status.batteryPercent != nil || status.thermalLevel != nil {
       print(
         "기기: 배터리 \(status.batteryPercent.map { "\($0)%" } ?? "확인 불가"), "
-          + "열 상태 \(status.thermalLevel ?? "확인 불가")"
+          + "macOS 열 압력 \(status.thermalLevel ?? "확인 불가")"
       )
     }
+    for field in SupervisorDiagnostics.temperatureSummaryFields(status.temperatureTelemetry) {
+      print(field)
+    }
+  }
+
+  private static func printTemperature(
+    _ telemetry: TemperatureTelemetrySnapshot,
+    now: Date = Date()
+  ) {
+    print("직접 내부 온도")
+    switch telemetry.status {
+    case .unsupportedModel:
+      print("  상태: 이 모델에서 아직 검증되지 않음")
+    case .mappingUnverified:
+      print("  상태: 이 모델의 센서 매핑이 검증되지 않음")
+    case .temporarilyUnavailable:
+      print("  상태: 현재 읽을 수 없음")
+      if let lastSuccessfulAt = telemetry.lastSuccessfulAt {
+        print("  마지막 성공 측정: \(ageDescription(lastSuccessfulAt, now: now))")
+      }
+    case .available, .partial:
+      guard let validUntil = telemetry.validUntil, now <= validUntil else {
+        print("  상태: 최신 측정 없음")
+        if let lastSuccessfulAt = telemetry.lastSuccessfulAt {
+          print("  마지막 성공 측정: \(ageDescription(lastSuccessfulAt, now: now))")
+        }
+        print("  외장 표면 온도: 소프트웨어로 측정하지 않음")
+        return
+      }
+      print("  상태: \(telemetry.status == .available ? "전체 측정" : "부분 측정")")
+      for observation in telemetry.components {
+        guard let minimum = observation.minimumCelsius,
+          let maximum = observation.maximumCelsius
+        else {
+          continue
+        }
+        let name = observation.component == .cpuInternal ? "CPU" : "GPU"
+        print(
+          "  \(name) 내부 센서 최고: \(celsius(maximum)), "
+            + "범위 \(celsius(minimum))–\(celsius(maximum)), "
+            + "유효 \(observation.validSensorCount)/\(observation.expectedSensorCount)"
+        )
+      }
+      print("  측정: \(ageDescription(telemetry.sampledAt, now: now))")
+    }
+    var provenance = ["AppleSMC"]
+    if let machineModel = telemetry.machineModel {
+      provenance.append(machineModel)
+    }
+    if let operatingSystemBuild = telemetry.operatingSystemBuild {
+      provenance.append("macOS 빌드 \(operatingSystemBuild)")
+    }
+    if let mappingRevision = telemetry.mappingRevision {
+      provenance.append(mappingRevision)
+    }
+    print("  관측 출처: \(provenance.joined(separator: ", "))")
+    if telemetry.mappingQuality == .singleDeviceValidated {
+      print("  매핑 검증: 동일 모델 실기기 1대")
+    }
+    print("  외장 표면 온도: 소프트웨어로 측정하지 않음")
+  }
+
+  private static func celsius(_ value: Double) -> String {
+    String(format: "%.1f°C", locale: Locale(identifier: "en_US_POSIX"), value)
+  }
+
+  private static func ageDescription(_ date: Date, now: Date) -> String {
+    let seconds = max(0, Int(now.timeIntervalSince(date)))
+    return seconds < 60 ? "\(seconds)초 전" : "\(seconds / 60)분 전"
   }
 
   private static func describe(_ error: SupervisorXPCClientError) -> String {
@@ -497,9 +573,9 @@ struct RuntinueCLI {
     case .staleSnapshot:
       "센서 정보가 오래됨"
     case .thermalUnavailable:
-      "열 상태를 확인할 수 없음"
+      "macOS 열 압력을 확인할 수 없음"
     case .thermalLimitReached(let observed, let cutoff):
-      "열 상태 \(observed.rawValue), 중단 기준 \(cutoff.rawValue)"
+      "macOS 열 압력 \(observed.rawValue), 중단 기준 \(cutoff.rawValue)"
     case .batteryUnavailable:
       "배터리 잔량을 확인할 수 없음"
     case .batteryBelowFloor(let observed, let floor):

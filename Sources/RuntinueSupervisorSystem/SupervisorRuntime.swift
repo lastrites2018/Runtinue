@@ -2,6 +2,7 @@ import Foundation
 import RuntinueCore
 import RuntinueIPC
 import RuntinueSupervisorCore
+import RuntinueSystem
 import RuntinueUserSupport
 
 public protocol SupervisorEnvironmentSampling: Sendable {
@@ -62,6 +63,7 @@ public actor SupervisorRuntime {
   private let directController: DirectSafetyLeaseController
   private let deskController: DeskModeController
   private let sampler: any SupervisorEnvironmentSampling
+  private let temperatureSampler: (any TemperatureTelemetrySampling)?
   private let statusCache: any SupervisorStatusCaching
   private let historyRecorder: (any SupervisorHistoryRecording)?
   private let eventRecorder: SupervisorEventRecorder?
@@ -84,10 +86,13 @@ public actor SupervisorRuntime {
   private var lidConflictWasObserved = false
   private var lidConflictEventPending = false
   private var monitorTask: Task<Void, Never>?
+  private var temperatureMonitorTask: Task<Void, Never>?
+  private var latestTemperatureTelemetry: WireTemperatureTelemetry?
 
   public init(
     backend: any SupervisorLeaseBackend,
     sampler: any SupervisorEnvironmentSampling,
+    temperatureSampler: (any TemperatureTelemetrySampling)? = nil,
     statusCache: any SupervisorStatusCaching,
     historyRecorder: (any SupervisorHistoryRecording)? = nil,
     eventRecorder: SupervisorEventRecorder? = nil,
@@ -121,6 +126,7 @@ public actor SupervisorRuntime {
       clock: clock
     )
     self.sampler = sampler
+    self.temperatureSampler = temperatureSampler
     self.statusCache = statusCache
     self.historyRecorder = historyRecorder
     self.eventRecorder = eventRecorder
@@ -136,6 +142,7 @@ public actor SupervisorRuntime {
       return await currentStatus()
     }
     hasStarted = true
+    startTemperatureMonitorIfNeeded()
     switch await backend.releaseExistingOwnedLease() {
     case .released:
       startupRecoveryDetail = nil
@@ -647,6 +654,7 @@ public actor SupervisorRuntime {
   @discardableResult
   public func shutdown() async -> SupervisorStatusWire {
     stopMonitor()
+    stopTemperatureMonitor()
     if let startupRecoveryDetail {
       let wire = makeStartupRecoveryStatus(detail: startupRecoveryDetail)
       return await persist(wire)
@@ -756,7 +764,38 @@ public actor SupervisorRuntime {
     monitorTask = nil
   }
 
+  private func startTemperatureMonitorIfNeeded() {
+    guard temperatureMonitorTask == nil, let temperatureSampler else {
+      return
+    }
+    let interval = monitorInterval
+    temperatureMonitorTask = Task.detached(priority: .utility) { [weak self] in
+      while !Task.isCancelled {
+        let snapshot = await temperatureSampler.sample()
+        guard !Task.isCancelled else {
+          return
+        }
+        await self?.publishTemperatureTelemetry(snapshot)
+        do {
+          try await Task.sleep(for: interval)
+        } catch {
+          return
+        }
+      }
+    }
+  }
+
+  private func stopTemperatureMonitor() {
+    temperatureMonitorTask?.cancel()
+    temperatureMonitorTask = nil
+  }
+
+  private func publishTemperatureTelemetry(_ snapshot: TemperatureTelemetrySnapshot) {
+    latestTemperatureTelemetry = makeWireTemperatureTelemetry(snapshot)
+  }
+
   private func persist(_ status: SupervisorStatusWire) async -> SupervisorStatusWire {
+    let status = status.withTemperatureTelemetry(latestTemperatureTelemetry)
     if lidConflictEventPending {
       lidConflictEventPending = false
       await eventRecorder?.record(.lidStateConflict)
@@ -895,6 +934,79 @@ public actor SupervisorRuntime {
       detail: detail,
       updatedAt: Date()
     )
+  }
+
+  private func makeWireTemperatureTelemetry(
+    _ snapshot: TemperatureTelemetrySnapshot
+  ) -> WireTemperatureTelemetry {
+    WireTemperatureTelemetry(
+      status: wireTemperatureStatus(snapshot.status),
+      source: wireTemperatureSource(snapshot.source),
+      machineModel: snapshot.machineModel,
+      operatingSystemBuild: snapshot.operatingSystemBuild,
+      mappingRevision: snapshot.mappingRevision,
+      mappingQuality: snapshot.mappingQuality.map(wireTemperatureMappingQuality),
+      samplingIntervalSeconds: monitorInterval.secondsValue,
+      sampledAt: snapshot.sampledAt,
+      validUntil: snapshot.validUntil,
+      lastSuccessfulAt: snapshot.lastSuccessfulAt,
+      components: snapshot.components.map { observation in
+        WireTemperatureComponentObservation(
+          component: wireTemperatureComponent(observation.component),
+          minimumCelsius: observation.minimumCelsius,
+          maximumCelsius: observation.maximumCelsius,
+          validSensorCount: observation.validSensorCount,
+          expectedSensorCount: observation.expectedSensorCount,
+          validSensorIDs: observation.validSensorIDs
+        )
+      }
+    )
+  }
+
+  private func wireTemperatureStatus(
+    _ status: TemperatureTelemetryStatus
+  ) -> WireTemperatureTelemetryStatus {
+    switch status {
+    case .available:
+      .available
+    case .partial:
+      .partial
+    case .unsupportedModel:
+      .unsupportedModel
+    case .mappingUnverified:
+      .mappingUnverified
+    case .temporarilyUnavailable:
+      .temporarilyUnavailable
+    }
+  }
+
+  private func wireTemperatureSource(
+    _ source: TemperatureTelemetrySource
+  ) -> WireTemperatureTelemetrySource {
+    switch source {
+    case .appleSMC:
+      .appleSMC
+    }
+  }
+
+  private func wireTemperatureMappingQuality(
+    _ quality: TemperatureMappingQuality
+  ) -> WireTemperatureMappingQuality {
+    switch quality {
+    case .singleDeviceValidated:
+      .singleDeviceValidated
+    }
+  }
+
+  private func wireTemperatureComponent(
+    _ component: TemperatureComponent
+  ) -> WireTemperatureComponent {
+    switch component {
+    case .cpuInternal:
+      .cpuInternal
+    case .gpuInternal:
+      .gpuInternal
+    }
   }
 
   private func makeStartupRecoveryStatus(detail: String) -> SupervisorStatusWire {

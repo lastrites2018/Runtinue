@@ -1,5 +1,6 @@
 import Foundation
 import RuntinueIPC
+import RuntinueUserSupport
 
 enum MenuBarConfigurationError: Error, Equatable, LocalizedError {
   case hotspotRequired
@@ -300,6 +301,8 @@ enum MenuBarCriticalWarningPolicy {
 }
 
 struct MenuBarPresentation: Equatable, Sendable {
+  private static let supplementalDetailCharacterLimit = 160
+
   let statusIndicator: String
   let summary: String
   let headline: String
@@ -316,7 +319,8 @@ struct MenuBarPresentation: Equatable, Sendable {
   init(
     status: SupervisorStatusWire?,
     isCommandInFlight: Bool = false,
-    iconStyle: MenuBarIconStyle = .continuationMark
+    iconStyle: MenuBarIconStyle = .continuationMark,
+    now: Date = Date()
   ) {
     self.iconStyle = iconStyle
     guard !isCommandInFlight else {
@@ -398,23 +402,48 @@ struct MenuBarPresentation: Equatable, Sendable {
       tone = .neutral
     }
 
-    var fields: [String] = []
+    var statusFields: [String] = []
     if let remaining = status.remainingSeconds {
-      fields.append("남은 시간 \(Self.duration(remaining))")
+      statusFields.append("남은 시간 \(Self.duration(remaining))")
     }
     if let battery = status.batteryPercent {
-      fields.append("배터리 \(battery)%")
+      statusFields.append("배터리 \(battery)%")
     }
     if let thermal = status.thermalLevel {
-      fields.append("열 \(Self.thermal(thermal))")
+      statusFields.append("macOS 열 압력: \(Self.thermal(thermal))")
     }
-    if let detail = status.detail, !detail.isEmpty {
-      fields.append(detail)
+    statusFields.append(
+      contentsOf: SupervisorDiagnostics.temperatureSummaryFields(
+        status.temperatureTelemetry,
+        now: now
+      )
+    )
+
+    var detailLines = [statusFields.joined(separator: " | ")]
+    if let detail = Self.supplementalDetail(status.detail) {
+      detailLines.append(detail)
     }
     if let issues = status.observation?.issues, !issues.isEmpty {
-      fields.append("관찰 기록 경고, 진단 정보를 확인하세요.")
+      detailLines.append("관찰 기록 경고, 진단 정보를 확인하세요.")
     }
-    self.detail = fields.joined(separator: " | ")
+    self.detail = detailLines.filter { !$0.isEmpty }.joined(separator: "\n")
+  }
+
+  private static func supplementalDetail(_ value: String?) -> String? {
+    guard let value else {
+      return nil
+    }
+    let singleLine = value
+      .split(whereSeparator: { $0.isNewline })
+      .joined(separator: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !singleLine.isEmpty else {
+      return nil
+    }
+    guard singleLine.count > supplementalDetailCharacterLimit else {
+      return singleLine
+    }
+    return String(singleLine.prefix(supplementalDetailCharacterLimit)) + "…"
   }
 
   private static func mode(_ mode: WireSessionMode) -> String {
@@ -428,10 +457,10 @@ struct MenuBarPresentation: Equatable, Sendable {
 
   private static func thermal(_ level: String) -> String {
     switch level {
-    case "nominal": "정상"
-    case "fair": "약간 높음"
-    case "serious": "높음"
-    case "critical": "매우 높음"
+    case "nominal": "제한 신호 없음 (nominal)"
+    case "fair": "약간 상승 (fair)"
+    case "serious": "높음 (serious)"
+    case "critical": "매우 높음 (critical)"
     case "unknown": "확인 불가"
     default: level
     }

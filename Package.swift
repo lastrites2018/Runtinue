@@ -129,7 +129,7 @@ let package = Package(
       name: "RuntinueSupervisorSystemTests",
       dependencies: [
         "RuntinueCore", "RuntinueHelperCore", "RuntinueIPC", "RuntinueSupervisorCore",
-        "RuntinueSupervisorSystem", "RuntinueUserSupport",
+        "RuntinueSupervisorSystem", "RuntinueSystem", "RuntinueUserSupport",
       ]
     ),
     .testTarget(

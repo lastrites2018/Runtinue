@@ -456,8 +456,72 @@ final class MenuBarModelsTests: XCTestCase {
     )
 
     XCTAssertEqual(presentation.statusIndicator, "✓")
-    XCTAssertTrue(presentation.detail.contains("열 정상"))
+    XCTAssertTrue(
+      presentation.detail.contains("macOS 열 압력: 제한 신호 없음 (nominal)")
+    )
+    XCTAssertFalse(presentation.detail.contains("열 정상"))
     XCTAssertTrue(presentation.detail.contains("관찰 기록 경고"))
+  }
+
+  func testSupplementalDetailCannotGrowTheMenuWithoutBoundOrHideAWarning() {
+    let presentation = MenuBarPresentation(
+      status: status(
+        verdict: .protected,
+        closedLidAllowed: true,
+        observation: WireObservationStatus(
+          buildID: nil,
+          issues: [.eventsUnavailable]
+        ),
+        detail: "activity source\n" + String(repeating: "x", count: 2_048)
+      )
+    )
+    let lines = presentation.detail.split(separator: "\n", omittingEmptySubsequences: false)
+
+    XCTAssertEqual(lines.count, 3)
+    XCTAssertEqual(lines[1].count, 161)
+    XCTAssertTrue(lines[1].hasSuffix("…"))
+    XCTAssertEqual(lines.last, "관찰 기록 경고, 진단 정보를 확인하세요.")
+  }
+
+  func testFreshDirectTemperaturesAreSeparateFromMacOSThermalPressure() {
+    let sampledAt = Date(timeIntervalSince1970: 1_000)
+    let presentation = MenuBarPresentation(
+      status: status(
+        verdict: .protected,
+        closedLidAllowed: true,
+        temperatureTelemetry: temperatureTelemetry(
+          status: .available,
+          sampledAt: sampledAt,
+          validUntil: sampledAt.addingTimeInterval(15)
+        )
+      ),
+      now: sampledAt.addingTimeInterval(5)
+    )
+
+    XCTAssertTrue(presentation.detail.contains("macOS 열 압력: 제한 신호 없음 (nominal)"))
+    XCTAssertTrue(
+      presentation.detail.contains("내부 센서 최고: CPU 74.0°C, GPU 66.0°C")
+    )
+    XCTAssertFalse(presentation.detail.contains("온도 정상"))
+  }
+
+  func testStaleDirectTemperatureDoesNotRemainVisibleAsCurrent() {
+    let sampledAt = Date(timeIntervalSince1970: 1_000)
+    let presentation = MenuBarPresentation(
+      status: status(
+        verdict: .protected,
+        closedLidAllowed: true,
+        temperatureTelemetry: temperatureTelemetry(
+          status: .available,
+          sampledAt: sampledAt,
+          validUntil: sampledAt.addingTimeInterval(15)
+        )
+      ),
+      now: sampledAt.addingTimeInterval(60)
+    )
+
+    XCTAssertTrue(presentation.detail.contains("직접 온도: 최신 측정 없음"))
+    XCTAssertFalse(presentation.detail.contains("74.0°C"))
   }
 
   func testPendingCommandOverridesPreviouslyProtectedPresentation() {
@@ -502,7 +566,9 @@ private func status(
   phase: WireTripPhase? = nil,
   mode: WireSessionMode = .trip,
   sessionID: UUID? = UUID(),
-  observation: WireObservationStatus? = nil
+  observation: WireObservationStatus? = nil,
+  temperatureTelemetry: WireTemperatureTelemetry? = nil,
+  detail: String? = nil
 ) -> SupervisorStatusWire {
   SupervisorStatusWire(
     phase: phase ?? (verdict == .waitingForHotspot ? .waitingForHotspot : .active),
@@ -515,7 +581,44 @@ private func status(
     thermalLevel: "nominal",
     lidState: "open",
     observation: observation,
-    detail: nil,
+    temperatureTelemetry: temperatureTelemetry,
+    detail: detail,
     updatedAt: Date(timeIntervalSince1970: 1)
+  )
+}
+
+private func temperatureTelemetry(
+  status: WireTemperatureTelemetryStatus,
+  sampledAt: Date,
+  validUntil: Date?
+) -> WireTemperatureTelemetry {
+  WireTemperatureTelemetry(
+    status: status,
+    source: .appleSMC,
+    machineModel: "Mac17,8",
+    operatingSystemBuild: "25F84",
+    mappingRevision: "Mac17,8-apple-smc-r1",
+    mappingQuality: .singleDeviceValidated,
+    sampledAt: sampledAt,
+    validUntil: validUntil,
+    lastSuccessfulAt: sampledAt,
+    components: [
+      WireTemperatureComponentObservation(
+        component: .cpuInternal,
+        minimumCelsius: 69,
+        maximumCelsius: 74,
+        validSensorCount: 18,
+        expectedSensorCount: 18,
+        validSensorIDs: ["Tp00"]
+      ),
+      WireTemperatureComponentObservation(
+        component: .gpuInternal,
+        minimumCelsius: 61,
+        maximumCelsius: 66,
+        validSensorCount: 7,
+        expectedSensorCount: 7,
+        validSensorIDs: ["Tg0U"]
+      ),
+    ]
   )
 }

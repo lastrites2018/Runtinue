@@ -26,7 +26,7 @@ final class READMEAssetRenderingTests: XCTestCase {
 
   private func renderStatus(_ status: SupervisorStatusWire, to url: URL) throws {
     let header = ProtectionStatusHeaderView()
-    header.update(MenuBarPresentation(status: status))
+    header.update(MenuBarPresentation(status: status, now: status.updatedAt))
     header.layoutSubtreeIfNeeded()
 
     let card = READMEStatusCard(contentView: header)
@@ -68,6 +68,7 @@ final class READMEAssetRenderingTests: XCTestCase {
       batteryPercent: 78,
       thermalLevel: "nominal",
       lidState: "open",
+      temperatureTelemetry: temperatureTelemetry(),
       detail: nil,
       updatedAt: Date(timeIntervalSince1970: 1)
     )
@@ -84,8 +85,42 @@ final class READMEAssetRenderingTests: XCTestCase {
       batteryPercent: nil,
       thermalLevel: nil,
       lidState: nil,
+      temperatureTelemetry: temperatureTelemetry(),
       detail: nil,
       updatedAt: Date(timeIntervalSince1970: 1)
+    )
+  }
+
+  private func temperatureTelemetry() -> WireTemperatureTelemetry {
+    let sampledAt = Date(timeIntervalSince1970: 1)
+    return WireTemperatureTelemetry(
+      status: .available,
+      source: .appleSMC,
+      machineModel: "Mac17,8",
+      operatingSystemBuild: "25F84",
+      mappingRevision: "Mac17,8-apple-smc-r1",
+      mappingQuality: .singleDeviceValidated,
+      sampledAt: sampledAt,
+      validUntil: sampledAt.addingTimeInterval(15),
+      lastSuccessfulAt: sampledAt,
+      components: [
+        WireTemperatureComponentObservation(
+          component: .cpuInternal,
+          minimumCelsius: 69,
+          maximumCelsius: 74,
+          validSensorCount: 18,
+          expectedSensorCount: 18,
+          validSensorIDs: ["Tp00"]
+        ),
+        WireTemperatureComponentObservation(
+          component: .gpuInternal,
+          minimumCelsius: 61,
+          maximumCelsius: 66,
+          validSensorCount: 7,
+          expectedSensorCount: 7,
+          validSensorIDs: ["Tg0U"]
+        ),
+      ]
     )
   }
 }
