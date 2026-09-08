@@ -4,7 +4,36 @@ import XCTest
 @testable import RuntinueIPC
 @testable import RuntinueUserSupport
 
-final class SupervisorDiagnosticsTests: XCTestCase {
+final class SupervisorDiagnosticsTests: KoreanInterfaceTestCase {
+  func testEnglishDiagnosticsAndEventSummaryAreLocalized() {
+    InterfaceLanguage.$override.withValue(.en) {
+      let now = Date(timeIntervalSince1970: 1010)
+      let telemetry = temperatureTelemetry(
+        status: .partial,
+        sampledAt: Date(timeIntervalSince1970: 1000), validUntil: Date(timeIntervalSince1970: 1015))
+      let text =
+        (SupervisorDiagnostics.temperatureDiagnosticLines(telemetry, now: now)
+        + SupervisorDiagnostics.observationLines(
+          WireObservationStatus(
+            buildID: nil,
+            issues: [
+              .eventsUnavailable, .historyUnavailable, .buildIdentityUnavailable,
+              .statusCacheUnavailable,
+            ]))
+        + [SupervisorEventSummary(events: []).text]).joined(separator: "\n")
+      XCTAssertTrue(text.contains("CPU 74.0°C"))
+      XCTAssertTrue(text.contains("partial reading"))
+      XCTAssertTrue(text.contains("10 seconds ago"))
+      XCTAssertFalse(text.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) })
+      let stale = SupervisorDiagnostics.temperatureDiagnosticLines(
+        telemetry,
+        now: now.addingTimeInterval(100)
+      ).joined(separator: "\n")
+      XCTAssertFalse(stale.contains("74.0°C"))
+      XCTAssertTrue(stale.contains("no recent reading"))
+    }
+  }
+
   func testSleepOverrideWarningIsNilWhenSleepIsEnabledForEveryVerdict() {
     for verdict in allVerdicts {
       XCTAssertNil(

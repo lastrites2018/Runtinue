@@ -5,7 +5,7 @@ import XCTest
 @testable import RuntinueMenuBar
 
 @MainActor
-final class MenuBarFormViewsTests: XCTestCase {
+final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
   func testRememberedHotspotIsKeptWhileConnectedToAnotherNetwork() throws {
     _ = NSApplication.shared
     let form = TripConfigurationView(
@@ -46,7 +46,8 @@ final class MenuBarFormViewsTests: XCTestCase {
     let hotspot: NSTextField = try control("runtinue.trip.hotspot", in: form)
     hotspot.stringValue = "Office"
     XCTAssertThrowsError(try form.input.makeRequest())
-    form.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: hotspot))
+    form.controlTextDidChange(
+      Notification(name: NSControl.textDidChangeNotification, object: hotspot))
     let confirm: NSButton = try control("runtinue.trip.confirmHotspot", in: form)
     XCTAssertEqual(confirm.state, .off)
   }

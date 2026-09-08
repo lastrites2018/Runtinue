@@ -12,4 +12,4 @@ mkdir -p "${CLANG_MODULE_CACHE_PATH}" "${SWIFTPM_MODULECACHE_OVERRIDE}"
 swift test --package-path "${project_root}" --disable-sandbox \
   --filter READMEAssetRenderingTests.testRenderREADMEStatusAssetsFromProductionViews
 
-print "README 상태 이미지 2개를 실제 앱 컴포넌트와 고정 예시 데이터로 갱신했습니다."
+print "README 이미지 3개를 실제 앱 컴포넌트와 고정 예시 데이터로 갱신했습니다."

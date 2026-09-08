@@ -20,6 +20,8 @@
 !/Resources/*.plist
 !/Resources/*.requirement.example
 !/Packaging/Runtinue.app.Info.plist
+!/Packaging/ko.lproj/InfoPlist.strings
+!/Packaging/en.lproj/InfoPlist.strings
 !/Packaging/pkg-scripts/preinstall
 !/Packaging/pkg-scripts/postinstall
 !/Casks/*.rb.template

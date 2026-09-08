@@ -8,6 +8,7 @@ trap 'rm -rf -- "$runtinue_test_dir"' EXIT
 fixture="$runtinue_test_dir/fixture"
 mkdir -p "$fixture/scripts" "$fixture/.githooks" \
   "$fixture/READMEAssets" \
+  "$fixture/Packaging/ko.lproj" "$fixture/Packaging/en.lproj" \
   "$fixture/Sources/RuntinueMenuBar/Resources" \
   "$fixture/Packaging/Runtinue.xcassets/Runtinue.appiconset"
 cp "$project_root/.gitignore" "$fixture/.gitignore"
@@ -26,6 +27,8 @@ cp "$project_root/READMEAssets/recovery.png" "$fixture/READMEAssets/recovery.png
 cp "$project_root/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png" \
   "$fixture/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png"
 cp "$project_root/Packaging/RuntinueIcon.png" "$fixture/Packaging/RuntinueIcon.png"
+cp "$project_root/Packaging/ko.lproj/InfoPlist.strings" "$fixture/Packaging/ko.lproj/InfoPlist.strings"
+cp "$project_root/Packaging/en.lproj/InfoPlist.strings" "$fixture/Packaging/en.lproj/InfoPlist.strings"
 cp "$project_root/Packaging/Runtinue.xcassets/Contents.json" \
   "$fixture/Packaging/Runtinue.xcassets/Contents.json"
 cp "$project_root/Packaging/Runtinue.xcassets/Runtinue.appiconset/Contents.json" \
@@ -78,6 +81,8 @@ for path in \
   'READMEAssets/private.png' 'READMEAssets/private.gif' \
   'READMEAssets/session.json' \
   'Packaging/notes.png' 'Sources/RuntinueMenuBar/Resources/private.png' \
+  'Packaging/ko.lproj/private.strings' 'Packaging/en.lproj/private.strings' \
+  'Packaging/fr.lproj/InfoPlist.strings' \
   'Packaging/Runtinue.xcassets/private.json' \
   'Packaging/Runtinue.xcassets/Runtinue.appiconset/private.json' \
   'secret.p12' 'file with spaces.md' $'file\nwith-newline.md'; do

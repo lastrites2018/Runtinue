@@ -5,7 +5,7 @@ import XCTest
 @testable import RuntinueUserSupport
 
 @MainActor
-final class SupervisorEventStoreTests: XCTestCase {
+final class SupervisorEventStoreTests: KoreanInterfaceTestCase {
   private let buildID = String(repeating: "a", count: 64)
 
   func testMissingLogReadHasNoFilesystemSideEffect() async throws {

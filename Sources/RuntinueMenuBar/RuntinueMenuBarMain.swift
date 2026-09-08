@@ -30,37 +30,39 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private let statusHeaderItem = NSMenuItem()
   private let statusHeaderView = ProtectionStatusHeaderView()
   private let wifiPermissionItem = NSMenuItem(
-    title: "Wi-Fi 감지 권한 확인 중",
+    title: L("Wi-Fi 이름 접근 권한 확인 중", "Checking Wi-Fi name access"),
     action: nil,
     keyEquivalent: ""
   )
   private let startTripItem = NSMenuItem(
-    title: "통근 보호 시작…",
+    title: L("이동 중 실행 유지…", "Keep awake on the go…"),
     action: nil,
     keyEquivalent: ""
   )
   private let startAdaptiveItem = NSMenuItem(
-    title: "Adaptive 시작…",
+    title: L("작업 중 자동 유지…", "Keep awake during tasks…"),
     action: nil,
     keyEquivalent: ""
   )
   private let startDeskItem = NSMenuItem(
-    title: "Desk 시작…",
+    title: L("시간을 정해 유지…", "Keep awake for a set time…"),
     action: nil,
     keyEquivalent: ""
   )
-  private let stopItem = NSMenuItem(title: "현재 모드 중단", action: nil, keyEquivalent: "")
+  private let stopItem = NSMenuItem(
+    title: L("실행 유지 중단", "Stop keeping awake"), action: nil, keyEquivalent: "")
   private let diagnosticsItem = NSMenuItem(
-    title: "진단 정보 보기…",
+    title: L("진단 정보 보기…", "Diagnostics…"),
     action: nil,
     keyEquivalent: ""
   )
   private let historyItem = NSMenuItem(
-    title: "최근 기록 보기…",
+    title: L("최근 기록 보기…", "Recent history…"),
     action: nil,
     keyEquivalent: ""
   )
-  private let eventsItem = NSMenuItem(title: "통근 관찰 요약…", action: nil, keyEquivalent: "")
+  private let eventsItem = NSMenuItem(
+    title: L("이동 모드 기록 요약…", "Travel activity summary…"), action: nil, keyEquivalent: "")
 
   private var timer: Timer?
   private let refreshController = MenuBarRefreshController()
@@ -90,6 +92,13 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func configureMenu() {
+    startTripItem.title = L("이동 중 실행 유지…", "Keep awake on the go…")
+    startAdaptiveItem.title = L("작업 중 자동 유지…", "Keep awake during tasks…")
+    startDeskItem.title = L("시간을 정해 유지…", "Keep awake for a set time…")
+    stopItem.title = L("실행 유지 중단", "Stop keeping awake")
+    diagnosticsItem.title = L("진단 정보 보기…", "Diagnostics…")
+    historyItem.title = L("최근 기록 보기…", "Recent history…")
+    eventsItem.title = L("이동 모드 기록 요약…", "Travel activity summary…")
     statusItem.button?.image = MenuBarStatusVisuals.image(for: .continuationMark)
     statusItem.button?.imagePosition = .imageLeading
     statusItem.button?.imageScaling = .scaleProportionallyDown
@@ -119,17 +128,20 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     stopItem.identifier = NSUserInterfaceItemIdentifier("runtinue.stop")
 
     let refreshItem = NSMenuItem(
-      title: "새로 고침",
+      title: L("새로 고침", "Refresh"),
       action: #selector(refreshFromMenu),
       keyEquivalent: "r"
     )
     refreshItem.target = self
     let quitItem = NSMenuItem(
-      title: "Runtinue 메뉴바 종료",
+      title: L("메뉴바만 종료", "Quit menu bar only"),
       action: #selector(quit),
       keyEquivalent: "q"
     )
     quitItem.target = self
+    quitItem.toolTip = L(
+      "실행 유지도 끝내려면 먼저 실행 유지 중단을 선택하세요.",
+      "To stop keeping awake too, choose Stop keeping awake first.")
 
     let menu = NSMenu()
     menu.autoenablesItems = false
@@ -146,11 +158,35 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     menu.addItem(historyItem)
     menu.addItem(eventsItem)
     menu.addItem(refreshItem)
+    let languageMenu = NSMenu()
+    for (index, language) in InterfaceLanguage.allCases.enumerated() {
+      let titles = [L("시스템 언어 사용", "Use system language"), "한국어", "English"]
+      let item = NSMenuItem(
+        title: titles[index], action: #selector(changeLanguage(_:)), keyEquivalent: "")
+      item.target = self
+      item.representedObject = language.rawValue
+      item.state = InterfaceLanguage.selected == language ? .on : .off
+      languageMenu.addItem(item)
+    }
+    let languageItem = NSMenuItem(title: L("언어", "Language"), action: nil, keyEquivalent: "")
+    languageItem.submenu = languageMenu
+    menu.addItem(languageItem)
     menu.addItem(.separator())
     menu.addItem(quitItem)
     statusItem.menu = menu
 
     render(nil)
+  }
+
+  @objc private func changeLanguage(_ sender: NSMenuItem) {
+    guard let value = sender.representedObject as? String,
+      let language = InterfaceLanguage(rawValue: value)
+    else { return }
+    UserDefaults.standard.set(language.rawValue, forKey: InterfaceLanguage.preferenceKey)
+    // Rebuild labels without briefly presenting the last successful status as current.
+    statusItem.menu?.removeAllItems()
+    configureMenu()
+    refresh()
   }
 
   private func refresh() {
@@ -187,16 +223,16 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private func updateWiFiPermissionItem() {
     switch wifiAuthorization.status {
     case .authorizedAlways:
-      wifiPermissionItem.title = "Wi-Fi 감지 권한 허용됨"
+      wifiPermissionItem.title = L("Wi-Fi 이름 접근 허용됨", "Wi-Fi name access granted")
       wifiPermissionItem.isEnabled = false
     case .notDetermined:
-      wifiPermissionItem.title = "Wi-Fi 감지 권한 허용"
+      wifiPermissionItem.title = L("Wi-Fi 이름 접근 허용…", "Allow Wi-Fi name access…")
       wifiPermissionItem.isEnabled = true
     case .denied, .restricted:
-      wifiPermissionItem.title = "시스템 설정에서 위치 권한 허용"
+      wifiPermissionItem.title = L("위치 권한 설정 열기…", "Open Location Services settings…")
       wifiPermissionItem.isEnabled = true
     @unknown default:
-      wifiPermissionItem.title = "Wi-Fi 감지 권한 확인 불가"
+      wifiPermissionItem.title = L("Wi-Fi 이름 접근 권한 확인 불가", "Wi-Fi name access unavailable")
       wifiPermissionItem.isEnabled = false
     }
   }
@@ -208,11 +244,12 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       )
     }
     let sleepOverrideUnavailable = isSleepOverrideUnavailable(status: status)
-    let iconStyle: MenuBarIconStyle = MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
-      currentStatus: status,
-      lastKnownStatus: lastKnownStatus,
-      sleepOverrideUnavailable: sleepOverrideUnavailable
-    ) ? .criticalWarning : .continuationMark
+    let iconStyle: MenuBarIconStyle =
+      MenuBarCriticalWarningPolicy.shouldReplaceContinuationMark(
+        currentStatus: status,
+        lastKnownStatus: lastKnownStatus,
+        sleepOverrideUnavailable: sleepOverrideUnavailable
+      ) ? .criticalWarning : .continuationMark
     let presentation = MenuBarPresentation(
       status: status,
       isCommandInFlight: commandController.isCommandInFlight,
@@ -225,7 +262,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       button.image = MenuBarStatusVisuals.image(for: presentation.iconStyle)
       let title = button.image == nil ? presentation.buttonTitle : presentation.statusIndicator
       button.attributedTitle = MenuBarStatusTypography.attributedTitle(title)
-      button.toolTip = "Runtinue: \(presentation.summary)"
+      button.toolTip =
+        "Runtinue: \(presentation.summary)"
         + (presentation.detail.isEmpty ? "" : "\n\(presentation.detail)")
       button.setAccessibilityValue(presentation.summary)
     }
@@ -234,7 +272,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func isSleepOverrideUnavailable(status: SupervisorStatusWire?) -> Bool {
-    let shouldProbe = status == nil
+    let shouldProbe =
+      status == nil
       || status?.verdict == .unknown
       || status?.verdict == .recoveryPending
       || status?.phase == .recoveryPending
@@ -264,9 +303,12 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       confirmedHotspotSSID: tripPreferences.confirmedHotspotSSID(for: currentNetwork)
     )
     let alert = configurationAlert(
-      title: "통근 보호 시작",
-      message: "이동 중 사용할 핫스팟을 확인하세요. 이미 연결되어 있어도 시작할 수 있습니다.",
-      accessoryView: form
+      title: L("이동 중 실행 유지", "Keep awake on the go"),
+      message: L(
+        "휴대전화 인터넷으로 전환한 뒤에도 작업이 계속 실행되도록 설정합니다.",
+        "Keep tasks running after switching to your phone's internet connection."),
+      accessoryView: form,
+      validate: { _ = try form.input.makeRequest() }
     )
     alert.window.initialFirstResponder = form.initialFirstResponder
     guard alert.runModal() == .alertFirstButtonReturn else {
@@ -294,9 +336,12 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   @objc private func startAdaptive() {
     let form = AdaptiveConfigurationView()
     let alert = configurationAlert(
-      title: "Adaptive 시작",
-      message: "활동 신호가 있을 때만 보호하는 시간을 지정하세요.",
-      accessoryView: form
+      title: L("작업 중 자동 유지", "Keep awake during tasks"),
+      message: L(
+        "작업 도구의 활동에 맞춰 실행 유지와 수면 허용을 자동으로 전환합니다.",
+        "Automatically keep awake or allow sleep based on activity from an integrated tool."),
+      accessoryView: form,
+      validate: { _ = try form.input.validatedSettings() }
     )
     alert.window.initialFirstResponder = form.initialFirstResponder
     guard alert.runModal() == .alertFirstButtonReturn else {
@@ -319,9 +364,12 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   @objc private func startDesk() {
     let form = DeskConfigurationView()
     let alert = configurationAlert(
-      title: "Desk 시작",
-      message: "책상에서 사용할 보호 방식과 최대 시간을 지정하세요.",
-      accessoryView: form
+      title: L("시간을 정해 유지", "Keep awake for a set time"),
+      message: L(
+        "다운로드나 긴 작업이 끝날 때까지 Mac이 잠들지 않도록 시간을 정합니다.",
+        "Set how long your Mac should stay awake for a download or a long-running task."),
+      accessoryView: form,
+      validate: { _ = try form.input.validatedSettings() }
     )
     alert.window.initialFirstResponder = form.initialFirstResponder
     guard alert.runModal() == .alertFirstButtonReturn else {
@@ -405,18 +453,23 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       }
       let currentNetwork = await network
 
-      var lines = ["Runtinue 진단"]
+      var lines = [L("Runtinue 진단", "Runtinue diagnostics")]
       lines.append(contentsOf: SupervisorDiagnostics.observationLines(status?.observation))
       if let status {
         let presentation = MenuBarPresentation(status: status)
-        lines.append("Supervisor: 연결됨")
-        lines.append("상태: \(presentation.summary)")
+        lines.append(L("백그라운드 서비스: 연결됨", "Background service: connected"))
+        lines.append(L("상태: \(presentation.summary)", "Status: \(presentation.summary)"))
         if !presentation.detail.isEmpty {
-          lines.append("상세: \(presentation.detail)")
+          lines.append(L("상세: \(presentation.detail)", "Details: \(presentation.detail)"))
+          if let raw = status.detail {
+            lines.append(L("서비스 원문: \(raw)", "Service details: \(raw)"))
+          }
         }
       } else {
-        lines.append("Supervisor: 연결 실패")
-        lines.append("상세: \(statusError ?? "확인 불가")")
+        lines.append(L("백그라운드 서비스: 연결 실패", "Background service: disconnected"))
+        lines.append(
+          L("상세: \(statusError ?? "확인 불가")", "Details: \(statusError ?? L("확인 불가", "Unavailable"))")
+        )
       }
       if let warning = SupervisorDiagnostics.sleepOverrideWarning(
         isSleepDisabled: sleepOverride == .disabled,
@@ -426,32 +479,61 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       }
       switch sleepOverride {
       case .normal:
-        lines.append("SleepDisabled: 정상 수면 허용")
+        lines.append(L("시스템 수면: 허용됨", "System sleep: allowed"))
       case .disabled:
-        lines.append("SleepDisabled: 수면 비활성화")
+        lines.append(L("시스템 수면: 억제 중", "System sleep: inhibited"))
       case .unavailable(let detail):
-        lines.append("SleepDisabled: 확인 불가, \(detail)")
+        lines.append(L("시스템 수면: 확인 불가, \(detail)", "System sleep: unavailable, \(detail)"))
       }
       lines.append("")
-      lines.append("현재 센서")
-      lines.append("배터리: \(device.batteryPercent.map { "\($0)%" } ?? "확인 불가")")
-      lines.append("전원: \(device.powerConnection.rawValue)")
-      lines.append("macOS 열 압력: \(device.thermalLevel.rawValue)")
-      lines.append("  부품과 외장 표면의 직접 온도가 아닙니다.")
-      lines.append("덮개: \(device.lidState.rawValue)")
-      lines.append("외장 화면: \(device.externalDisplayState.rawValue)")
+      lines.append(L("현재 센서", "Current sensors"))
+      lines.append(
+        L(
+          "배터리: \(device.batteryPercent.map { "\($0)%" } ?? "확인 불가")",
+          "Battery: \(device.batteryPercent.map { "\($0)%" } ?? L("확인 불가", "Unavailable"))"))
+      lines.append(
+        L(
+          "전원: \(InterfaceStatusText.value(device.powerConnection.rawValue))",
+          "Power: \(InterfaceStatusText.value(device.powerConnection.rawValue))"))
+      lines.append(
+        L(
+          "macOS 열 압력: \(InterfaceStatusText.value(device.thermalLevel.rawValue))",
+          "macOS thermal pressure: \(InterfaceStatusText.value(device.thermalLevel.rawValue))"))
+      lines.append(
+        L("  macOS가 보고하는 시스템의 열 제약 상태입니다.", "  System thermal restrictions reported by macOS."))
+      lines.append(
+        L(
+          "덮개: \(InterfaceStatusText.value(device.lidState.rawValue))",
+          "Lid: \(InterfaceStatusText.value(device.lidState.rawValue))"))
+      lines.append(
+        L(
+          "외장 화면: \(InterfaceStatusText.value(device.externalDisplayState.rawValue))",
+          "External display: \(InterfaceStatusText.value(device.externalDisplayState.rawValue))"))
       lines.append("")
-      lines.append(contentsOf: SupervisorDiagnostics.temperatureDiagnosticLines(
-        status?.temperatureTelemetry
-      ))
+      lines.append(
+        contentsOf: SupervisorDiagnostics.temperatureDiagnosticLines(
+          status?.temperatureTelemetry
+        ))
       lines.append("")
-      lines.append("현재 네트워크")
-      lines.append("SSID: \(currentNetwork.ssid ?? "확인 불가")")
-      lines.append("인터페이스: \(currentNetwork.interfaceName ?? "확인 불가")")
-      lines.append("게이트웨이: \(currentNetwork.gateway ?? "확인 불가")")
-      lines.append("인터넷: \(currentNetwork.internetReachability.rawValue)")
+      lines.append(L("현재 네트워크", "Current network"))
+      lines.append(
+        L(
+          "SSID: \(currentNetwork.ssid ?? "확인 불가")",
+          "SSID: \(currentNetwork.ssid ?? L("확인 불가", "Unavailable"))"))
+      lines.append(
+        L(
+          "인터페이스: \(currentNetwork.interfaceName ?? "확인 불가")",
+          "Interface: \(currentNetwork.interfaceName ?? L("확인 불가", "Unavailable"))"))
+      lines.append(
+        L(
+          "게이트웨이: \(currentNetwork.gateway ?? "확인 불가")",
+          "Gateway: \(currentNetwork.gateway ?? L("확인 불가", "Unavailable"))"))
+      lines.append(
+        L(
+          "인터넷: \(InterfaceStatusText.value(currentNetwork.internetReachability.rawValue))",
+          "Internet: \(InterfaceStatusText.value(currentNetwork.internetReachability.rawValue))"))
 
-      showTextPanel(title: "진단 정보", text: lines.joined(separator: "\n"))
+      showTextPanel(title: L("진단 정보", "Diagnostics"), text: lines.joined(separator: "\n"))
       informationTask = nil
       setInformationItemsEnabled(true)
     }
@@ -472,20 +554,28 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
         let lines = entries.reversed().map { entry in
           var fields = [
             formatter.string(from: entry.recordedAt),
-            "모드 \(entry.mode.rawValue)",
-            "상태 \(entry.verdict.rawValue)",
+            L(
+              "모드 \(InterfaceStatusText.mode(entry.mode))",
+              "Mode \(InterfaceStatusText.mode(entry.mode))"),
+            L(
+              "상태 \(InterfaceStatusText.value(entry.verdict.rawValue))",
+              "Status \(InterfaceStatusText.value(entry.verdict.rawValue))"),
           ]
           if let reason = entry.stopReason {
-            fields.append("종료 사유 \(reason.rawValue)")
+            fields.append(
+              L(
+                "종료 사유 \(InterfaceStatusText.value(reason.rawValue))",
+                "Stop reason \(InterfaceStatusText.value(reason.rawValue))"))
           }
           if let buildID = entry.buildID {
-            fields.append("빌드 \(buildID.prefix(12))")
+            fields.append(L("빌드 \(buildID.prefix(12))", "Build \(buildID.prefix(12))"))
           }
           return fields.joined(separator: " | ")
         }
         showTextPanel(
-          title: "최근 상태 기록",
-          text: lines.isEmpty ? "기록된 상태 전이가 없습니다." : lines.joined(separator: "\n")
+          title: L("최근 상태 기록", "Recent status history"),
+          text: lines.isEmpty
+            ? L("기록된 상태 변경이 없습니다.", "No status changes recorded.") : lines.joined(separator: "\n")
         )
       } catch {
         showError(error)
@@ -507,7 +597,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
           (SupervisorDiagnostics.observationLines(status.observation)
           + [SupervisorEventSummary(events: events, buildID: status.observation?.buildID).text])
           .joined(separator: "\n")
-        showTextPanel(title: "통근 관찰 요약", text: text)
+        showTextPanel(title: L("이동 모드 기록 요약", "Travel activity summary"), text: text)
       } catch {
         showError(error)
       }
@@ -525,26 +615,30 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private func configurationAlert(
     title: String,
     message: String,
-    accessoryView: NSView
+    accessoryView: NSView,
+    validate: @escaping () throws -> Void
   ) -> NSAlert {
     NSApplication.shared.activate(ignoringOtherApps: true)
-    let alert = NSAlert()
+    let alert = ValidatedConfigurationAlert()
+    alert.validate = validate
     alert.messageText = title
     alert.informativeText = message
     alert.alertStyle = .informational
     alert.accessoryView = accessoryView
-    alert.addButton(withTitle: "시작")
-    alert.addButton(withTitle: "취소")
+    let submit = alert.addButton(withTitle: L("시작", "Start"))
+    submit.target = alert
+    submit.action = #selector(ValidatedConfigurationAlert.submit(_:))
+    alert.addButton(withTitle: L("취소", "Cancel"))
     return alert
   }
 
   private func showError(_ error: Error) {
     NSApplication.shared.activate(ignoringOtherApps: true)
     let alert = NSAlert()
-    alert.messageText = "요청을 완료하지 못했습니다"
+    alert.messageText = L("요청을 완료하지 못했습니다", "Could not complete the request")
     alert.informativeText = userFacingDescription(error)
     alert.alertStyle = .warning
-    alert.addButton(withTitle: "확인")
+    alert.addButton(withTitle: L("확인", "OK"))
     alert.runModal()
   }
 
@@ -569,7 +663,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     let alert = NSAlert()
     alert.messageText = title
     alert.accessoryView = scrollView
-    alert.addButton(withTitle: "확인")
+    alert.addButton(withTitle: L("확인", "OK"))
     alert.runModal()
   }
 
@@ -577,15 +671,21 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     if let error = error as? SupervisorXPCClientError {
       switch error {
       case .encodingFailed:
-        return "Supervisor 요청을 만들 수 없습니다."
+        return L(
+          "백그라운드 서비스에 보낼 요청을 만들지 못했습니다.",
+          "Could not prepare the request for the background service.")
       case .unavailable:
-        return "Supervisor에 연결할 수 없습니다. 설치와 LaunchAgent 상태를 확인하세요."
+        return L(
+          "백그라운드 서비스에 연결하지 못했습니다. 앱을 다시 설치하거나 진단 정보를 확인하세요.",
+          "Could not reach the background service. Reinstall the app or check Diagnostics.")
       case .protocolMismatch:
-        return "앱과 Supervisor의 프로토콜 버전이 맞지 않습니다."
+        return L(
+          "앱과 백그라운드 서비스의 버전이 맞지 않습니다. 앱을 다시 설치하세요.",
+          "The app and background service versions are incompatible. Reinstall the app.")
       case .rejected(let detail):
-        return "Supervisor가 요청을 거부했습니다: \(detail)"
+        return InterfaceStatusText.rejection(detail)
       case .malformedResponse:
-        return "Supervisor 응답을 해석할 수 없습니다."
+        return L("백그라운드 서비스의 응답을 읽지 못했습니다.", "Could not read the background service response.")
       }
     }
     if let localized = error as? LocalizedError,
@@ -593,7 +693,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     {
       return description
     }
-    return error.localizedDescription
+    let code = (error as NSError).code
+    return L("요청을 처리하지 못했습니다. 오류 코드: \(code)", "Could not process the request. Error code: \(code)")
   }
 
   @objc private func refreshFromMenu() {
@@ -650,7 +751,10 @@ private enum MenuBarUIError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .wifiPermissionRequired:
-      "Wi-Fi Trip을 시작하려면 위치 권한을 허용한 뒤 다시 시도하세요."
+      L(
+        "핫스팟 이름을 확인하려면 위치 권한이 필요합니다. 시스템 설정에서 Runtinue의 위치 접근을 허용한 뒤 다시 시작하세요.",
+        "Location access is needed to read the hotspot name. Allow Runtinue in System Settings, then start again."
+      )
     }
   }
 }

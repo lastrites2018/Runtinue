@@ -5,7 +5,7 @@ import XCTest
 @testable import RuntinueMenuBar
 
 @MainActor
-final class READMEAssetRenderingTests: XCTestCase {
+final class READMEAssetRenderingTests: KoreanInterfaceTestCase {
   func testRenderREADMEStatusAssetsFromProductionViews() throws {
     guard ProcessInfo.processInfo.environment["RUNTINUE_RENDER_README_ASSETS"] == "1" else {
       throw XCTSkip("README 이미지 렌더링을 요청한 경우에만 실행합니다.")
@@ -15,6 +15,12 @@ final class READMEAssetRenderingTests: XCTestCase {
     )
     let outputDirectory = URL(fileURLWithPath: outputPath, isDirectory: true)
     _ = NSApplication.shared
+
+    let form = TripConfigurationView(rememberedHotspotSSID: "My iPhone", currentWiFiSSID: "Office")
+    form.layoutSubtreeIfNeeded()
+    let formCard = READMEStatusCard(contentView: form)
+    formCard.appearance = NSAppearance(named: .aqua)
+    try writePNG(of: formCard, to: outputDirectory.appendingPathComponent("trip-start.png"))
 
     try renderStatus(
       protectedStatus(), to: outputDirectory.appendingPathComponent("trip-protected.png")

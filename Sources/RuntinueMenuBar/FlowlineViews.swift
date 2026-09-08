@@ -1,4 +1,5 @@
 import AppKit
+import RuntinueUserSupport
 
 @MainActor
 enum RuntinuePalette {
@@ -108,7 +109,7 @@ enum MenuBarStatusVisuals {
       let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
       image = NSImage(
         systemSymbolName: "exclamationmark.triangle.fill",
-        accessibilityDescription: "보호 상태 확인 필요"
+        accessibilityDescription: L("보호 상태 확인 필요", "Check keep-awake status")
       )?.withSymbolConfiguration(configuration)
     }
     image?.isTemplate = true
@@ -450,7 +451,8 @@ final class ProtectionStatusHeaderView: NSView {
     checklistView.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
       contentStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.horizontalInset),
-      contentStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.horizontalInset),
+      contentStack.trailingAnchor.constraint(
+        equalTo: trailingAnchor, constant: -Self.horizontalInset),
       contentStack.topAnchor.constraint(equalTo: topAnchor, constant: Self.verticalInset),
       contentStack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.verticalInset),
       checklistView.widthAnchor.constraint(equalToConstant: SafetyChecklistGeometry.width),
