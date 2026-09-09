@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
+autoload -Uz is-at-least
 script_dir=${0:A:h}
 manifest=${1:-}
 shift || true
@@ -123,6 +124,14 @@ verify_file artifacts.runtinueAppInfo \
   "/Applications/Runtinue.app/Contents/Info.plist"
 verify_file artifacts.runtinueAppCodeResources \
   "/Applications/Runtinue.app/Contents/_CodeSignature/CodeResources"
+# CodeResources alone does not verify the resources it describes. Localizations
+# are mandatory from 0.4.0, including rollback to a localized package.
+if is-at-least 0.4.0 "${expected_version}"; then
+  for language in ko en; do
+    verify_file "artifacts.runtinueAppLocalization_${language}" \
+      "/Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings"
+  done
+fi
 verify_file artifacts.runtinueMenuIcon \
   "/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
 verify_file artifacts.runtinueAppIcon \

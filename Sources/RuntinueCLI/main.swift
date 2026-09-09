@@ -7,11 +7,15 @@ import RuntinueUserSupport
 @main
 struct RuntinueCLI {
   static func main() async {
-    do {
-      try await run(arguments: Array(CommandLine.arguments.dropFirst()))
-    } catch {
-      writeError("오류: \(error)\n")
-      Foundation.exit(1)
+    // CLI labels remain Korean; keep shared diagnostics in the same language.
+    // Task-local scope preserves the menu bar preference and covers async work and errors.
+    await InterfaceLanguage.$override.withValue(.ko) {
+      do {
+        try await run(arguments: Array(CommandLine.arguments.dropFirst()))
+      } catch {
+        writeError("오류: \(error)\n")
+        Foundation.exit(1)
+      }
     }
   }
 

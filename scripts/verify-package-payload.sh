@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
+autoload -Uz is-at-least
 script_dir=${0:A:h}
 project_root=${script_dir:h}
 pkg=${1:-}
@@ -151,6 +152,43 @@ test -n "${location_when_in_use}" || {
   exit 66
 }
 
+# Older pinned rollback packages predate localized permission resources.
+if is-at-least 0.4.0 "${package_version}"; then
+  for language in ko en; do
+    localized_info="${payload}/Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings"
+    [[ -f "${localized_info}" && ! -L "${localized_info}" ]] || {
+      print -u2 "패키지 번역 리소스 누락 또는 symlink: ${language}"
+      exit 66
+    }
+    /usr/bin/plutil -lint "${localized_info}" >/dev/null || {
+      print -u2 "패키지 번역 리소스 구문 오류: ${language}"
+      exit 65
+    }
+    for usage_key in NSLocationUsageDescription NSLocationWhenInUseUsageDescription; do
+      localized_usage=$(/usr/bin/plutil -extract "${usage_key}" raw "${localized_info}" 2>/dev/null || true)
+      [[ -n "${localized_usage}" ]] || {
+        print -u2 "패키지 번역 권한 설명 누락: ${language} ${usage_key}"
+        exit 66
+      }
+      if [[ "${language}" == en && "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != YES ]]; then
+        expect_plist_value "${app_info}" ":${usage_key}" "${localized_usage}"
+      fi
+    done
+    if [[ "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != YES ]]; then
+      /usr/bin/cmp -s "${localized_info}" \
+        "${project_root}/Packaging/${language}.lproj/InfoPlist.strings" || {
+        print -u2 "패키지 번역 리소스가 검증된 소스와 다름: ${language}"
+        exit 66
+      }
+    fi
+  done
+  if [[ "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != YES ]]; then
+    expect_plist_value "${app_info}" ":CFBundleDevelopmentRegion" "en"
+    expect_plist_value "${app_info}" ":CFBundleLocalizations:0" "ko"
+    expect_plist_value "${app_info}" ":CFBundleLocalizations:1" "en"
+  fi
+fi
+
 helper_requirement=$(
   /usr/bin/sed -n '1p' \
     "${payload}/Library/Application Support/io.github.lastrites2018.runtinue/helper/supervisor.requirement"
@@ -226,4 +264,4 @@ if [[ "${RUNTINUE_SKIP_SOURCE_COMPARISON:-NO}" != "YES" ]]; then
   }
 fi
 
-print "패키지 payload, arm64, 버전, 소스 식별자, caller requirement와 설치 스크립트 검증 통과"
+print "패키지 payload, 번역 리소스, arm64, 버전, 소스 식별자, caller requirement와 설치 스크립트 검증 통과"

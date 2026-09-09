@@ -55,6 +55,35 @@ final class BilingualInterfaceTests: XCTestCase {
     XCTAssertEqual(InterfaceLanguage.resolve(.en, preferredLanguages: ["ko"]), .en)
   }
 
+  func testBundleFallbackMatchesSystemResolverAndPermissionDescriptions() throws {
+    let root = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let info = try XCTUnwrap(
+      try PropertyListSerialization.propertyList(
+        from: Data(contentsOf: root.appendingPathComponent("Packaging/Runtinue.app.Info.plist")),
+        format: nil
+      ) as? [String: Any])
+    let fallback = try XCTUnwrap(info["CFBundleDevelopmentRegion"] as? String)
+    for preferences: [String] in [[], ["fr-FR"], ["ja-JP", "de-DE"]] {
+      XCTAssertEqual(
+        InterfaceLanguage.resolve(.system, preferredLanguages: preferences).rawValue, fallback)
+    }
+    XCTAssertEqual(info["CFBundleLocalizations"] as? [String], ["ko", "en"])
+    let localized = try XCTUnwrap(
+      try PropertyListSerialization.propertyList(
+        from: Data(
+          contentsOf: root.appendingPathComponent("Packaging/\(fallback).lproj/InfoPlist.strings")),
+        format: nil
+      ) as? [String: String])
+    for key in ["NSLocationUsageDescription", "NSLocationWhenInUseUsageDescription"] {
+      let description = try XCTUnwrap(localized[key])
+      XCTAssertFalse(description.isEmpty)
+      XCTAssertEqual(info[key] as? String, description)
+    }
+  }
+
   func testBothLanguagesPreserveProtectionDecisionsWithoutMixedStatusText() {
     for verdict: WireProtectionVerdict in [
       .protected, .inactive, .waitingForHotspot, .acquiring, .releasing, .recoveryPending, .unsafe,
