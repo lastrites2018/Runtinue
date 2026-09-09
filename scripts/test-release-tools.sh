@@ -150,6 +150,72 @@ fixture_manifest_entry requirements.activity \
 RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
   expect_exit 0 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
 print "설치 정합성 성공 fixture 통과"
+
+# Resource requirements follow the package version, not the presence of a key
+# or the rollback flag. Keep pre-localization packages compatible.
+for fixture_version in 0.3.0 0.3.99; do
+  /usr/bin/plutil -replace package.version -string "${fixture_version}" "${fixture_plist}"
+  /usr/bin/plutil -convert json -r -o "${fixture_manifest}" "${fixture_plist}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 0 "${script_dir}/verify-installation.sh" "${fixture_manifest}" --rollback
+done
+for fixture_version in 0.4 0.4.0 0.10.0 1.0.0; do
+  /usr/bin/plutil -replace package.version -string "${fixture_version}" "${fixture_plist}"
+  /usr/bin/plutil -convert json -r -o "${fixture_manifest}" "${fixture_plist}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 65 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 65 "${script_dir}/verify-installation.sh" "${fixture_manifest}" --rollback
+done
+/usr/bin/plutil -replace package.version -string "${current_version}" "${fixture_plist}"
+for language in ko en; do
+  localized_path="${fixture_root}/Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings"
+  /bin/mkdir -p "${localized_path:h}"
+  /usr/bin/ditto "${project_root}/Packaging/${language}.lproj/InfoPlist.strings" "${localized_path}"
+  /usr/bin/plutil -insert "artifacts.runtinueAppLocalization_${language}" -dictionary "${fixture_plist}"
+  fixture_manifest_entry "artifacts.runtinueAppLocalization_${language}" "${localized_path}"
+done
+/usr/bin/plutil -convert json -r -o "${fixture_manifest}" "${fixture_plist}"
+RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+  expect_exit 0 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+for language in ko en; do
+  localized_path="${fixture_root}/Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings"
+  /bin/mv -- "${localized_path}" "${localized_path}.original"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 66 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 66 "${script_dir}/verify-installation.sh" "${fixture_manifest}" --rollback
+  /bin/ln -s "${localized_path}.original" "${localized_path}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 66 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+  /bin/rm -- "${localized_path}"
+  /bin/mv -- "${localized_path}.original" "${localized_path}"
+  /usr/bin/ditto "${localized_path}" "${localized_path}.original"
+  print tamper >> "${localized_path}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 65 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+  /bin/mv -- "${localized_path}.original" "${localized_path}"
+
+  bad_manifest="${work_root}/bad-localization.manifest.json"
+  /usr/bin/ditto "${fixture_manifest}" "${bad_manifest}"
+  /usr/bin/plutil -remove "artifacts.runtinueAppLocalization_${language}" "${bad_manifest}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 65 "${script_dir}/verify-installation.sh" "${bad_manifest}"
+  /usr/bin/ditto "${fixture_manifest}" "${bad_manifest}"
+  /usr/bin/plutil -replace "artifacts.runtinueAppLocalization_${language}.sha256" -string \
+    0000000000000000000000000000000000000000000000000000000000000000 "${bad_manifest}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 65 "${script_dir}/verify-installation.sh" "${bad_manifest}"
+  /usr/bin/ditto "${fixture_manifest}" "${bad_manifest}"
+  /usr/bin/plutil -replace "artifacts.runtinueAppLocalization_${language}.installedPath" \
+    -string "/Applications/Runtinue.app/Contents/Resources/other.strings" "${bad_manifest}"
+  RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+    expect_exit 65 "${script_dir}/verify-installation.sh" "${bad_manifest}"
+done
+RUNTINUE_INSTALL_ROOT="${fixture_root}" RUNTINUE_INSTALL_FIXTURE=YES \
+  expect_exit 0 "${script_dir}/verify-installation.sh" "${fixture_manifest}"
+print "번역 리소스 누락, symlink, 변조, manifest 오류 차단과 이전 버전 호환 fixture 통과"
+
 for icon_path in \
   "${fixture_root}/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png" \
   "${fixture_root}/Applications/Runtinue.app/Contents/Resources/Runtinue.icns"; do
@@ -252,6 +318,28 @@ if [[ -f "${candidate_pkg}" && -f "${candidate_manifest}" ]]; then
   expect_exit 77 "${script_dir}/rollback-package.sh" "${candidate_pkg}" \
     --sha256 "${candidate_sha}" --manifest "${candidate_manifest}" --apply
   print "설치와 rollback 읽기 전용 및 opt-in gate 통과"
+
+  for language in ko en; do
+    localization_key="artifacts.runtinueAppLocalization_${language}"
+    localization_payload="Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings"
+    [[ "$(/usr/bin/plutil -extract "${localization_key}.payloadPath" raw "${candidate_manifest}")" == "${localization_payload}" ]] || exit 1
+    [[ "$(/usr/bin/plutil -extract "${localization_key}.sha256" raw "${candidate_manifest}")" == \
+      "$(fixture_hash "${project_root}/Packaging/${language}.lproj/InfoPlist.strings")" ]] || exit 1
+    bad_manifest="${work_root}/bad-package-localization.manifest.json"
+    /usr/bin/ditto "${candidate_manifest}" "${bad_manifest}"
+    /usr/bin/plutil -remove "${localization_key}" "${bad_manifest}"
+    expect_exit 65 "${script_dir}/release-manifest.sh" verify "${candidate_pkg}" "${bad_manifest}"
+    /usr/bin/ditto "${candidate_manifest}" "${bad_manifest}"
+    /usr/bin/plutil -replace "${localization_key}.sha256" -string \
+      0000000000000000000000000000000000000000000000000000000000000000 "${bad_manifest}"
+    expect_exit 65 "${script_dir}/release-manifest.sh" verify "${candidate_pkg}" "${bad_manifest}"
+    for path_key in payloadPath installedPath; do
+      /usr/bin/ditto "${candidate_manifest}" "${bad_manifest}"
+      /usr/bin/plutil -replace "${localization_key}.${path_key}" -string "other.strings" "${bad_manifest}"
+      expect_exit 65 "${script_dir}/release-manifest.sh" verify "${candidate_pkg}" "${bad_manifest}"
+    done
+  done
+  print "실제 패키지 번역 리소스 manifest 생성과 경로 및 해시 검증 통과"
 
   forged_manifest="${work_root}/forged-release.manifest.json"
   /usr/bin/ditto "${candidate_manifest}" "${forged_manifest}"

@@ -4,7 +4,7 @@ import XCTest
 @testable import RuntinueIPC
 @testable import RuntinueMenuBar
 
-final class SafetyChecklistViewsTests: XCTestCase {
+final class SafetyChecklistViewsTests: KoreanInterfaceTestCase {
   func testChecklistGeometryFitsTheMenuHeaderGrid() {
     XCTAssertEqual(SafetyChecklistGeometry.width, 296)
     XCTAssertEqual(SafetyChecklistGeometry.height, 62)
@@ -83,7 +83,7 @@ final class SafetyChecklistViewsTests: XCTestCase {
         ) as? SafetyChecklistView
       )
 
-      XCTAssertEqual(headline.stringValue, "보호 중, Trip")
+      XCTAssertEqual(headline.stringValue, "실행 유지 중, 이동 모드")
       XCTAssertEqual(guidance.stringValue, "덮개 닫기 가능")
       XCTAssertTrue(detail.stringValue.contains("남은 시간"))
       XCTAssertFalse(checklist.isHidden)
@@ -129,10 +129,10 @@ final class SafetyChecklistViewsTests: XCTestCase {
       measurement.maximumNumberOfLines = 0
       measurement.preferredMaxLayoutWidth = detail.bounds.width
 
-      XCTAssertTrue(detail.stringValue.hasSuffix("관찰 기록 경고, 진단 정보를 확인하세요."))
+      XCTAssertTrue(detail.stringValue.hasSuffix("일부 기록을 저장하지 못했습니다. 진단 정보를 확인하세요."))
       XCTAssertTrue(
         detail.stringValue.contains(
-          "\nadaptive activity source=codex, session=commute\n관찰 기록 경고"
+          "\n활동 도구: codex, 작업: commute\n일부 기록을 저장하지 못했습니다."
         )
       )
       XCTAssertEqual(detail.maximumNumberOfLines, 0)
@@ -154,7 +154,7 @@ final class SafetyChecklistViewsTests: XCTestCase {
           items: [
             SafetyCheckItem(text: "시작 시 네트워크 확인", state: .passed),
             SafetyCheckItem(text: "시작 시 인터넷 확인", state: .passed),
-            SafetyCheckItem(text: "기기 상태 안전", state: .passed),
+            SafetyCheckItem(text: "시스템 보호 기준 충족", state: .passed),
             SafetyCheckItem(text: "수면 보호 적용됨", state: .verified),
           ]
         ),

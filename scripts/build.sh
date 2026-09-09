@@ -68,6 +68,9 @@ done
 app_root="${distribution_root}/Runtinue.app"
 mkdir -p "${app_root}/Contents/MacOS" "${app_root}/Contents/Resources"
 /usr/bin/ditto "${project_root}/Packaging/Runtinue.app.Info.plist" "${app_root}/Contents/Info.plist"
+for language in ko en; do
+  /usr/bin/ditto "${project_root}/Packaging/${language}.lproj" "${app_root}/Contents/Resources/${language}.lproj"
+done
 /usr/bin/ditto "${swift_bin}/runtinue-menubar" "${app_root}/Contents/MacOS/runtinue-menubar"
 /usr/bin/ditto "${project_root}/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png" \
   "${app_root}/Contents/Resources/RuntinueTemplate.png"

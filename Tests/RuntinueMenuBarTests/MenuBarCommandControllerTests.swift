@@ -5,7 +5,7 @@ import XCTest
 @testable import RuntinueMenuBar
 
 @MainActor
-final class MenuBarCommandControllerTests: XCTestCase {
+final class MenuBarCommandControllerTests: KoreanInterfaceTestCase {
   func testPendingCommandImmediatelyInvalidatesProtectedStatusUntilReply() async {
     let controller = MenuBarCommandController()
     let started = expectation(description: "명령 시작")
@@ -43,7 +43,7 @@ final class MenuBarCommandControllerTests: XCTestCase {
 
     XCTAssertFalse(controller.isCommandInFlight)
     XCTAssertEqual(visibleStatus, Self.inactiveStatus)
-    XCTAssertEqual(presentation.summary, "비활성")
+    XCTAssertEqual(presentation.summary, "실행 유지 꺼짐")
     XCTAssertEqual(updates.count, 2)
   }
 

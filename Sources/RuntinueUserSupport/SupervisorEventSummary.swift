@@ -72,20 +72,42 @@ public struct SupervisorEventSummary: Equatable, Sendable {
 
   public var text: String {
     [
-      "관찰 범위: 현재 파일에 남아 있는 이벤트, 실제 원격 작업 유지 여부는 별도 확인",
-      "통근 시작 요청: \(requestedTrips), 수락: \(acceptedTrips), 거부: \(rejectedTrips), 응답 미확인: \(unresolvedTripRequests)",
-      "시작 거부율: \(rate(tripRejectionRate))",
-      "연결된 통근 세션: 보호 확인 \(protectedTrips), 종료 확인 \(endedTrips)",
-      "수면 억제 해제 요청: \(requestedReleases), 정상 수면 확인: \(restoredReleases), 미확인: \(pendingReleases)",
-      "해제 미확인율: \(rate(unconfirmedReleaseRate))",
-      "후속 복구 확인 세션: \(recoveredSessions), 호출자 인증 거부: \(authorizationRejections)",
-      "앞부분 보존 한도 초과: \(prefixWasTrimmed ? "예" : "아니요"), 연결되지 않은 결과: \(incompleteAttempts)",
-      "빌드 식별 누락: \(containsUnknownBuild ? "있음" : "없음")",
-      "조회 시 Supervisor의 관찰 경고도 함께 확인하세요. 누락된 이벤트를 성공으로 계산하지 않습니다.",
+      L(
+        "관찰 범위: 현재 파일에 남아 있는 이벤트, 실제 원격 작업 유지 여부는 별도 확인",
+        "Coverage: retained events only; remote task continuity requires a separate check"),
+      L(
+        "통근 시작 요청: \(requestedTrips), 수락: \(acceptedTrips), 거부: \(rejectedTrips), 응답 미확인: \(unresolvedTripRequests)",
+        "Travel starts requested: \(requestedTrips), accepted: \(acceptedTrips), rejected: \(rejectedTrips), unconfirmed: \(unresolvedTripRequests)"
+      ),
+      L("시작 거부율: \(rate(tripRejectionRate))", "Start rejection rate: \(rate(tripRejectionRate))"),
+      L(
+        "연결된 통근 세션: 보호 확인 \(protectedTrips), 종료 확인 \(endedTrips)",
+        "Linked travel sessions: keep-awake confirmed \(protectedTrips), ended \(endedTrips)"),
+      L(
+        "수면 억제 해제 요청: \(requestedReleases), 정상 수면 확인: \(restoredReleases), 미확인: \(pendingReleases)",
+        "Release requests: \(requestedReleases), sleep restored: \(restoredReleases), unconfirmed: \(pendingReleases)"
+      ),
+      L(
+        "해제 미확인율: \(rate(unconfirmedReleaseRate))",
+        "Unconfirmed release rate: \(rate(unconfirmedReleaseRate))"),
+      L(
+        "후속 복구 확인 세션: \(recoveredSessions), 호출자 인증 거부: \(authorizationRejections)",
+        "Recovered sessions: \(recoveredSessions), authorization rejections: \(authorizationRejections)"
+      ),
+      L(
+        "앞부분 보존 한도 초과: \(prefixWasTrimmed ? "예" : "아니요"), 연결되지 않은 결과: \(incompleteAttempts)",
+        "Older records removed: \(prefixWasTrimmed ? "Yes" : "No"), unlinked results: \(incompleteAttempts)"
+      ),
+      L(
+        "빌드 식별 누락: \(containsUnknownBuild ? "있음" : "없음")",
+        "Missing build identity: \(containsUnknownBuild ? "Yes" : "No")"),
+      L(
+        "조회 시 Supervisor의 관찰 경고도 함께 확인하세요. 누락된 이벤트를 성공으로 계산하지 않습니다.",
+        "Also check service recording warnings. Missing events are not counted as successes."),
     ].joined(separator: "\n")
   }
 
   private func rate(_ value: Double?) -> String {
-    value.map { String(format: "%.1f%%", $0 * 100) } ?? "표본 없음"
+    value.map { String(format: "%.1f%%", $0 * 100) } ?? L("표본 없음", "No samples")
   }
 }

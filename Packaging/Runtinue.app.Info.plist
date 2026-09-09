@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key>
-  <string>ko</string>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array><string>ko</string><string>en</string></array>
   <key>CFBundleExecutable</key>
   <string>runtinue-menubar</string>
   <key>CFBundleIdentifier</key>
@@ -33,8 +35,8 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSLocationUsageDescription</key>
-	<string>사용자가 지정한 핫스팟에 연결되어 있는지 확인하는 데 사용합니다.</string>
+	<string>Location access is needed to read your phone hotspot's Wi-Fi name in Travel mode.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>사용자가 지정한 핫스팟에 연결되어 있는지 확인하는 데 사용합니다.</string>
+	<string>Location access is needed to read your phone hotspot's Wi-Fi name in Travel mode.</string>
 </dict>
 </plist>

@@ -4,7 +4,63 @@ import XCTest
 @testable import RuntinueIPC
 @testable import RuntinueUserSupport
 
-final class SupervisorDiagnosticsTests: XCTestCase {
+final class SupervisorDiagnosticsTests: KoreanInterfaceTestCase {
+  func testKoreanCommandContextKeepsSharedDiagnosticsKoreanAcrossSuspension() async {
+    let preference = UserDefaults.standard.string(forKey: InterfaceLanguage.preferenceKey)
+    await InterfaceLanguage.$override.withValue(.en) {
+      let englishTemperature = SupervisorDiagnostics.temperatureSummaryFields(nil)
+      let englishEvents = SupervisorEventSummary(events: []).text
+      await InterfaceLanguage.$override.withValue(.ko) {
+        let fields = await Task {
+          await Task.yield()
+          return SupervisorDiagnostics.temperatureSummaryFields(nil)
+        }.value
+        XCTAssertEqual(fields, ["직접 온도: 설치된 Supervisor에서 지원하지 않음"])
+        XCTAssertEqual(
+          SupervisorDiagnostics.sleepOverrideWarning(isSleepDisabled: true, status: nil),
+          "경고: Supervisor에 연결할 수 없고 SleepDisabled가 켜져 있습니다.")
+        XCTAssertTrue(
+          SupervisorEventSummary(events: []).text.unicodeScalars.contains {
+            (0xAC00...0xD7A3).contains($0.value)
+          })
+      }
+      XCTAssertEqual(InterfaceLanguage.current, .en)
+      XCTAssertEqual(SupervisorDiagnostics.temperatureSummaryFields(nil), englishTemperature)
+      XCTAssertEqual(SupervisorEventSummary(events: []).text, englishEvents)
+    }
+    XCTAssertEqual(
+      UserDefaults.standard.string(forKey: InterfaceLanguage.preferenceKey), preference)
+  }
+
+  func testEnglishDiagnosticsAndEventSummaryAreLocalized() {
+    InterfaceLanguage.$override.withValue(.en) {
+      let now = Date(timeIntervalSince1970: 1010)
+      let telemetry = temperatureTelemetry(
+        status: .partial,
+        sampledAt: Date(timeIntervalSince1970: 1000), validUntil: Date(timeIntervalSince1970: 1015))
+      let text =
+        (SupervisorDiagnostics.temperatureDiagnosticLines(telemetry, now: now)
+        + SupervisorDiagnostics.observationLines(
+          WireObservationStatus(
+            buildID: nil,
+            issues: [
+              .eventsUnavailable, .historyUnavailable, .buildIdentityUnavailable,
+              .statusCacheUnavailable,
+            ]))
+        + [SupervisorEventSummary(events: []).text]).joined(separator: "\n")
+      XCTAssertTrue(text.contains("CPU 74.0°C"))
+      XCTAssertTrue(text.contains("partial reading"))
+      XCTAssertTrue(text.contains("10 seconds ago"))
+      XCTAssertFalse(text.unicodeScalars.contains { (0xAC00...0xD7A3).contains($0.value) })
+      let stale = SupervisorDiagnostics.temperatureDiagnosticLines(
+        telemetry,
+        now: now.addingTimeInterval(100)
+      ).joined(separator: "\n")
+      XCTAssertFalse(stale.contains("74.0°C"))
+      XCTAssertTrue(stale.contains("no recent reading"))
+    }
+  }
+
   func testSleepOverrideWarningIsNilWhenSleepIsEnabledForEveryVerdict() {
     for verdict in allVerdicts {
       XCTAssertNil(

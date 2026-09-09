@@ -4,7 +4,7 @@ import XCTest
 @testable import RuntinueIPC
 @testable import RuntinueMenuBar
 
-final class MenuBarModelsTests: XCTestCase {
+final class MenuBarModelsTests: KoreanInterfaceTestCase {
   func testIconIndicatorsPreserveEveryProtectionState() {
     let cases: [(WireProtectionVerdict, String)] = [
       (.protected, "✓"),
@@ -275,7 +275,7 @@ final class MenuBarModelsTests: XCTestCase {
       status: status(verdict: .protected, closedLidAllowed: false, mode: .desk)
     )
 
-    XCTAssertEqual(presentation.summary, "Desk 보호 중, 덮개 열기 필요")
+    XCTAssertEqual(presentation.summary, "시간 지정 모드 실행 유지 중, 덮개 열기 필요")
   }
 
   func testProtectedTripChecklistOnlyShowsVerifiedProtectionAfterClosedLidReadBack() throws {
@@ -323,7 +323,7 @@ final class MenuBarModelsTests: XCTestCase {
     XCTAssertEqual(acquiring.items.map(\.state), [.passed, .passed, .passed, .current])
     XCTAssertEqual(
       acquiring.items.map(\.text),
-      ["시작 시 네트워크 확인", "시작 시 인터넷 확인", "기기 상태 안전", "수면 보호 확인 중"]
+      ["시작 시 네트워크 확인", "시작 시 인터넷 확인", "시스템 보호 기준 충족", "수면 보호 확인 중"]
     )
   }
 
@@ -371,7 +371,7 @@ final class MenuBarModelsTests: XCTestCase {
       unsafeEnded.items.map(\.text),
       ["기기 안전 기준 벗어남", "정상 수면 상태 확인 필요"]
     )
-    XCTAssertFalse(unsafeEnded.items.map(\.text).contains("기기 상태 안전"))
+    XCTAssertFalse(unsafeEnded.items.map(\.text).contains("시스템 보호 기준 충족"))
   }
 
   func testCriticalWarningRequiresResponsibilityUnconfirmedStateAndUnreadableOverride() {
@@ -457,10 +457,10 @@ final class MenuBarModelsTests: XCTestCase {
 
     XCTAssertEqual(presentation.statusIndicator, "✓")
     XCTAssertTrue(
-      presentation.detail.contains("macOS 열 압력: 제한 신호 없음 (nominal)")
+      presentation.detail.contains("macOS 열 압력: 제한 신호 없음")
     )
     XCTAssertFalse(presentation.detail.contains("열 정상"))
-    XCTAssertTrue(presentation.detail.contains("관찰 기록 경고"))
+    XCTAssertTrue(presentation.detail.contains("일부 기록을 저장하지 못했습니다."))
   }
 
   func testSupplementalDetailCannotGrowTheMenuWithoutBoundOrHideAWarning() {
@@ -472,7 +472,7 @@ final class MenuBarModelsTests: XCTestCase {
           buildID: nil,
           issues: [.eventsUnavailable]
         ),
-        detail: "activity source\n" + String(repeating: "x", count: 2_048)
+        detail: "adaptive activity source=tool\n" + String(repeating: "x", count: 2_048)
       )
     )
     let lines = presentation.detail.split(separator: "\n", omittingEmptySubsequences: false)
@@ -480,7 +480,7 @@ final class MenuBarModelsTests: XCTestCase {
     XCTAssertEqual(lines.count, 3)
     XCTAssertEqual(lines[1].count, 161)
     XCTAssertTrue(lines[1].hasSuffix("…"))
-    XCTAssertEqual(lines.last, "관찰 기록 경고, 진단 정보를 확인하세요.")
+    XCTAssertEqual(lines.last, "일부 기록을 저장하지 못했습니다. 진단 정보를 확인하세요.")
   }
 
   func testFreshDirectTemperaturesAreSeparateFromMacOSThermalPressure() {
@@ -498,7 +498,7 @@ final class MenuBarModelsTests: XCTestCase {
       now: sampledAt.addingTimeInterval(5)
     )
 
-    XCTAssertTrue(presentation.detail.contains("macOS 열 압력: 제한 신호 없음 (nominal)"))
+    XCTAssertTrue(presentation.detail.contains("macOS 열 압력: 제한 신호 없음"))
     XCTAssertTrue(
       presentation.detail.contains("내부 센서 최고: CPU 74.0°C, GPU 66.0°C")
     )

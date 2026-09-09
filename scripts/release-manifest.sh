@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
+autoload -Uz is-at-least
 script_dir=${0:A:h}
 
 usage() {
@@ -256,6 +257,14 @@ create_manifest() {
   add_artifact "${plist}" runtinueAppCodeResources \
     "Applications/Runtinue.app/Contents/_CodeSignature/CodeResources" \
     "/Applications/Runtinue.app/Contents/_CodeSignature/CodeResources"
+  if is-at-least 0.4.0 "${version_value}"; then
+    for language in ko en; do
+      /usr/bin/plutil -insert "artifacts.runtinueAppLocalization_${language}" -dictionary "${plist}"
+      add_artifact "${plist}" "runtinueAppLocalization_${language}" \
+        "Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings" \
+        "/Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings"
+    done
+  fi
   add_artifact "${plist}" runtinueMenuIcon \
     "Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png" \
     "/Applications/Runtinue.app/Contents/Resources/RuntinueTemplate.png"
@@ -415,6 +424,13 @@ verify_manifest() {
     "/Library/LaunchAgents/io.github.lastrites2018.runtinue.supervisor.plist"
     "/Library/Application Support/io.github.lastrites2018.runtinue/uninstall-runtinue"
   )
+  if is-at-least 0.4.0 "${actual_version}"; then
+    for language in ko en; do
+      artifact_keys+=("runtinueAppLocalization_${language}")
+      artifact_payload_paths+=("Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings")
+      artifact_installed_paths+=("/Applications/Runtinue.app/Contents/Resources/${language}.lproj/InfoPlist.strings")
+    done
+  fi
   expected_build_id=$(manifest_value buildID "${manifest}") || fail "manifest buildID 누락" 65
   valid_sha256 "${expected_build_id}" || fail "manifest buildID 형식 오류" 65
   for key in "${artifact_keys[@]}"; do
