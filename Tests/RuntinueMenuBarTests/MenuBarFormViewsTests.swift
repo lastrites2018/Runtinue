@@ -1,4 +1,5 @@
 import AppKit
+import RuntinueUserSupport
 import XCTest
 
 @testable import RuntinueIPC
@@ -134,5 +135,142 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
       if let result: T = try? control(identifier, in: child) { return result }
     }
     throw NSError(domain: "MissingFormControl", code: 1)
+  }
+}
+
+@MainActor
+final class TimedSessionMenuTests: KoreanInterfaceTestCase {
+  func testPresetsDispatchTheSelectedDurationWithoutCustomInput() throws {
+    let target = TimedMenuActionTarget()
+    let menu = makeMenu(target: target)
+    XCTAssertEqual(menu.numberOfItems, 4)
+    XCTAssertEqual(menu.item(at: 0)?.title, "분")
+    XCTAssertEqual(menu.item(at: 1)?.title, "시간")
+    XCTAssertTrue(try XCTUnwrap(menu.item(at: 2)).isSeparatorItem)
+    XCTAssertEqual(menu.item(at: 3)?.title, "직접 입력…")
+    TimedSessionMenu.setEnabled(true, in: menu)
+
+    let expectedMinutes = [[5, 10, 15, 20, 30, 45], [60, 120, 180, 240, 360, 480]]
+    var expectedInputs: [DeskFormInput] = []
+    for (groupIndex, durations) in expectedMinutes.enumerated() {
+      let submenu = try XCTUnwrap(menu.item(at: groupIndex)?.submenu)
+      XCTAssertEqual(submenu.numberOfItems, durations.count)
+      for (itemIndex, minutes) in durations.enumerated() {
+        let item = try XCTUnwrap(submenu.item(at: itemIndex))
+        let expected = DeskFormInput(
+          maximumProtectionMinutes: String(minutes), allowClosedLid: false)
+        XCTAssertEqual(item.representedObject as? DeskFormInput, expected)
+        XCTAssertEqual(item.title, groupIndex == 0 ? "\(minutes)분" : "\(minutes / 60)시간")
+        XCTAssertEqual(
+          item.identifier?.rawValue, "runtinue.desk.preset.\(minutes)")
+        XCTAssertEqual(try expected.validatedSettings().hardCapSeconds, Double(minutes * 60))
+        XCTAssertFalse(try expected.validatedSettings().allowClosedLid)
+        submenu.performActionForItem(at: itemIndex)
+        expectedInputs.append(expected)
+      }
+    }
+    XCTAssertEqual(target.presetInputs, expectedInputs)
+    XCTAssertEqual(target.customInputCount, 0)
+  }
+
+  func testCustomInputUsesOnlyTheExistingFormAction() throws {
+    let target = TimedMenuActionTarget()
+    let menu = makeMenu(target: target)
+    TimedSessionMenu.setEnabled(true, in: menu)
+    let custom = try XCTUnwrap(menu.item(at: 3))
+    XCTAssertNil(custom.representedObject)
+    XCTAssertNil(custom.submenu)
+    XCTAssertEqual(custom.identifier?.rawValue, "runtinue.desk.custom")
+    menu.performActionForItem(at: 3)
+    XCTAssertEqual(target.customInputCount, 1)
+    XCTAssertTrue(target.presetInputs.isEmpty)
+  }
+
+  func testAllSubmenusFollowTheExistingStartAvailability() {
+    let target = TimedMenuActionTarget()
+    let menu = makeMenu(target: target)
+    assertEnabled(false, in: menu)
+    let idle = status(phase: .idle, mode: .none, verdict: .inactive)
+    let cases: [(SupervisorStatusWire?, Bool, Bool)] = [
+      (nil, false, false),
+      (idle, false, true),
+      (idle, true, false),
+      (status(phase: .active, mode: .desk, verdict: .protected), false, false),
+      (status(phase: .recoveryPending, mode: .desk, verdict: .recoveryPending), false, false),
+      (idle, false, true),
+    ]
+    for (status, inFlight, expectedEnabled) in cases {
+      let availability = MenuBarActionAvailability(status: status, isCommandInFlight: inFlight)
+      XCTAssertEqual(availability.canStart, expectedEnabled)
+      TimedSessionMenu.setEnabled(availability.canStart, in: menu)
+      assertEnabled(expectedEnabled, in: menu)
+    }
+  }
+
+  func testRebuiltMenuUsesEnglishLabelsAndTheSameDurations() throws {
+    UserDefaults.standard.set("en", forKey: InterfaceLanguage.preferenceKey)
+    let target = TimedMenuActionTarget()
+    let menu = makeMenu(target: target)
+    XCTAssertEqual(menu.item(at: 0)?.title, "Minutes")
+    XCTAssertEqual(menu.item(at: 1)?.title, "Hours")
+    XCTAssertEqual(menu.item(at: 3)?.title, "Custom…")
+    let minutes = try XCTUnwrap(menu.item(at: 0)?.submenu)
+    let hours = try XCTUnwrap(menu.item(at: 1)?.submenu)
+    XCTAssertEqual(minutes.items.map(\.title), [
+      "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes", "45 minutes",
+    ])
+    XCTAssertEqual(hours.items.map(\.title), [
+      "1 hour", "2 hours", "3 hours", "4 hours", "6 hours", "8 hours",
+    ])
+    XCTAssertEqual(
+      (hours.item(at: 5)?.representedObject as? DeskFormInput)?.maximumProtectionMinutes, "480")
+  }
+
+  private func makeMenu(target: TimedMenuActionTarget) -> NSMenu {
+    _ = NSApplication.shared
+    return TimedSessionMenu.make(
+      target: target,
+      presetAction: #selector(TimedMenuActionTarget.startPreset(_:)),
+      customAction: #selector(TimedMenuActionTarget.openCustom)
+    )
+  }
+
+  private func assertEnabled(_ enabled: Bool, in menu: NSMenu) {
+    XCTAssertFalse(menu.autoenablesItems)
+    menu.update()
+    for item in menu.items where !item.isSeparatorItem {
+      XCTAssertEqual(item.isEnabled, enabled, item.title)
+      if let submenu = item.submenu {
+        assertEnabled(enabled, in: submenu)
+      }
+    }
+  }
+
+  private func status(
+    phase: WireTripPhase,
+    mode: WireSessionMode,
+    verdict: WireProtectionVerdict
+  ) -> SupervisorStatusWire {
+    SupervisorStatusWire(
+      phase: phase, mode: mode, sessionID: nil, verdict: verdict,
+      remainingSeconds: nil, batteryPercent: nil, thermalLevel: nil, lidState: nil,
+      detail: nil, updatedAt: Date()
+    )
+  }
+}
+
+@MainActor
+private final class TimedMenuActionTarget: NSObject {
+  var presetInputs: [DeskFormInput] = []
+  var customInputCount = 0
+
+  @objc func startPreset(_ sender: NSMenuItem) {
+    if let input = sender.representedObject as? DeskFormInput {
+      presetInputs.append(input)
+    }
+  }
+
+  @objc func openCustom() {
+    customInputCount += 1
   }
 }
