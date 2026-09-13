@@ -354,11 +354,21 @@ struct MenuBarPresentation: Equatable, Sendable {
       safetyChecklist = nil
       return
     }
+    let compactTimed = status.mode == .desk && status.phase == .active
+      && status.verdict == .protected && !status.closedLidAllowed
+      && iconStyle == .continuationMark
     safetyChecklist = SafetyChecklistPresentation.trip(status: status)
     switch status.verdict {
     case .protected:
       statusIndicator = "✓"
-      if status.closedLidAllowed {
+      if compactTimed {
+        summary = L(
+          "시간 지정 모드 실행 유지 중, 덮개 열기 필요",
+          "Timed: keeping awake; leave lid open")
+        headline = L("실행 유지 중", "Keeping awake")
+        guidance = Self.timedRemaining(status.remainingSeconds)
+        tone = .progress
+      } else if status.closedLidAllowed {
         summary = L("보호 중, 덮개 닫기 가능", "Keeping awake; lid may be closed")
         headline = L(
           "실행 유지 중, \(Self.mode(status.mode))", "Keeping awake: \(Self.mode(status.mode))")
@@ -422,25 +432,29 @@ struct MenuBarPresentation: Equatable, Sendable {
     }
 
     var statusFields: [String] = []
-    if let remaining = status.remainingSeconds {
+    if compactTimed {
+      statusFields.append(L("덮개를 열고 사용", "Use with the lid open"))
+    } else {
+      if let remaining = status.remainingSeconds {
+        statusFields.append(
+          L("남은 시간 \(Self.duration(remaining))", "\(Self.duration(remaining)) remaining"))
+      }
+      if let battery = status.batteryPercent {
+        statusFields.append(L("배터리 \(battery)%", "Battery \(battery)%"))
+      }
+      if let thermal = status.thermalLevel {
+        statusFields.append(
+          L(
+            "macOS 열 압력: \(Self.thermal(thermal))", "macOS thermal pressure: \(Self.thermal(thermal))"
+          ))
+      }
       statusFields.append(
-        L("남은 시간 \(Self.duration(remaining))", "\(Self.duration(remaining)) remaining"))
-    }
-    if let battery = status.batteryPercent {
-      statusFields.append(L("배터리 \(battery)%", "Battery \(battery)%"))
-    }
-    if let thermal = status.thermalLevel {
-      statusFields.append(
-        L(
-          "macOS 열 압력: \(Self.thermal(thermal))", "macOS thermal pressure: \(Self.thermal(thermal))"
-        ))
-    }
-    statusFields.append(
-      contentsOf: SupervisorDiagnostics.temperatureSummaryFields(
-        status.temperatureTelemetry,
-        now: now
+        contentsOf: SupervisorDiagnostics.temperatureSummaryFields(
+          status.temperatureTelemetry,
+          now: now
+        )
       )
-    )
+    }
 
     var detailLines = [statusFields.joined(separator: " | ")]
     if let detail = Self.supplementalDetail(InterfaceStatusText.detail(status)) {
@@ -452,6 +466,14 @@ struct MenuBarPresentation: Equatable, Sendable {
       )
     }
     self.detail = detailLines.filter { !$0.isEmpty }.joined(separator: "\n")
+  }
+
+  private static func timedRemaining(_ seconds: Double?) -> String {
+    guard let seconds, seconds.isFinite, seconds > 0,
+      seconds <= DeskFormInput.maximumProtectionMinutes * 60
+    else { return L("남은 시간 확인 불가", "Remaining time unavailable") }
+    guard seconds >= 60 else { return L("1분 미만 남음", "Less than a minute remaining") }
+    return L("\(duration(seconds)) 남음", "\(duration(seconds)) remaining")
   }
 
   private static func supplementalDetail(_ value: String?) -> String? {
