@@ -37,14 +37,12 @@ struct AppBuildInformation: Equatable {
   }
 
   var sourceStateText: String {
-    switch sourceDirty {
-    case true:
-      L("커밋되지 않은 변경 포함", "Includes uncommitted changes")
-    case false:
-      L("커밋 이후 추가 변경 없음", "No uncommitted changes at build time")
-    case nil:
-      L("빌드 시 변경 여부 확인 불가", "Build-time source changes unknown")
+    guard let sourceDirty else {
+      return L("빌드 시 변경 여부 확인 불가", "Build-time source changes unknown")
     }
+    return sourceDirty
+      ? L("커밋되지 않은 변경 포함", "Includes uncommitted changes")
+      : L("커밋 이후 추가 변경 없음", "No uncommitted changes at build time")
   }
 
   var sourceLine: String {
