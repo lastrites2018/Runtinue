@@ -45,7 +45,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     keyEquivalent: ""
   )
   private let startDeskItem = NSMenuItem(
-    title: L("시간을 정해 유지…", "Keep awake for a set time…"),
+    title: L("시간을 정해 유지", "Keep awake for a set time"),
     action: nil,
     keyEquivalent: ""
   )
@@ -94,7 +94,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private func configureMenu() {
     startTripItem.title = L("이동 중 실행 유지…", "Keep awake on the go…")
     startAdaptiveItem.title = L("작업 중 자동 유지…", "Keep awake during tasks…")
-    startDeskItem.title = L("시간을 정해 유지…", "Keep awake for a set time…")
+    startDeskItem.title = L("시간을 정해 유지", "Keep awake for a set time")
     stopItem.title = L("실행 유지 중단", "Stop keeping awake")
     diagnosticsItem.title = L("진단 정보 보기…", "Diagnostics…")
     historyItem.title = L("최근 기록 보기…", "Recent history…")
@@ -112,8 +112,11 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     startTripItem.action = #selector(startTrip)
     startAdaptiveItem.target = self
     startAdaptiveItem.action = #selector(startAdaptive)
-    startDeskItem.target = self
-    startDeskItem.action = #selector(startDesk)
+    startDeskItem.submenu = TimedSessionMenu.make(
+      target: self,
+      presetAction: #selector(startDeskPreset(_:)),
+      customAction: #selector(startDesk)
+    )
     stopItem.target = self
     stopItem.action = #selector(stopCurrentMode)
     diagnosticsItem.target = self
@@ -292,6 +295,9 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     startTripItem.isEnabled = availability.canStart
     startAdaptiveItem.isEnabled = availability.canStart
     startDeskItem.isEnabled = availability.canStart
+    if let submenu = startDeskItem.submenu {
+      TimedSessionMenu.setEnabled(availability.canStart, in: submenu)
+    }
     stopItem.isEnabled = availability.canStop
   }
 
@@ -361,6 +367,17 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  @objc private func startDeskPreset(_ sender: NSMenuItem) {
+    guard startDeskItem.isEnabled, sender.isEnabled,
+      let input = sender.representedObject as? DeskFormInput
+    else { return }
+    do {
+      beginDeskSession(try input.validatedSettings())
+    } catch {
+      showError(error)
+    }
+  }
+
   @objc private func startDesk() {
     let form = DeskConfigurationView()
     let alert = configurationAlert(
@@ -377,15 +394,18 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     }
 
     do {
-      let settings = try form.input.validatedSettings()
-      performCommand { [client] in
-        try await client.enableDesk(
-          allowClosedLid: settings.allowClosedLid,
-          hardCapSeconds: settings.hardCapSeconds
-        )
-      }
+      beginDeskSession(try form.input.validatedSettings())
     } catch {
       showError(error)
+    }
+  }
+
+  private func beginDeskSession(_ settings: DeskSettings) {
+    performCommand { [client] in
+      try await client.enableDesk(
+        allowClosedLid: settings.allowClosedLid,
+        hardCapSeconds: settings.hardCapSeconds
+      )
     }
   }
 
@@ -708,6 +728,60 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
 
   @objc private func quit() {
     NSApplication.shared.terminate(nil)
+  }
+}
+
+@MainActor
+enum TimedSessionMenu {
+  static func make(
+    target: AnyObject,
+    presetAction: Selector,
+    customAction: Selector
+  ) -> NSMenu {
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    let groups: [(title: String, values: [Int], minutesPerUnit: Int)] = [
+      (L("분", "Minutes"), [5, 10, 15, 20, 30, 45], 1),
+      (L("시간", "Hours"), [1, 2, 3, 4, 6, 8], 60),
+    ]
+    for group in groups {
+      let submenu = NSMenu(title: group.title)
+      submenu.autoenablesItems = false
+      for value in group.values {
+        let minutes = value * group.minutesPerUnit
+        let title = group.minutesPerUnit == 1
+          ? L("\(value)분", "\(value) minutes")
+          : L("\(value)시간", value == 1 ? "1 hour" : "\(value) hours")
+        let item = NSMenuItem(title: title, action: presetAction, keyEquivalent: "")
+        item.target = target
+        item.representedObject = DeskFormInput(
+          maximumProtectionMinutes: String(minutes),
+          allowClosedLid: false
+        )
+        item.identifier = NSUserInterfaceItemIdentifier("runtinue.desk.preset.\(minutes)")
+        submenu.addItem(item)
+      }
+      let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
+      groupItem.submenu = submenu
+      menu.addItem(groupItem)
+    }
+    menu.addItem(.separator())
+    let custom = NSMenuItem(
+      title: L("직접 입력…", "Custom…"), action: customAction, keyEquivalent: "")
+    custom.target = target
+    custom.identifier = NSUserInterfaceItemIdentifier("runtinue.desk.custom")
+    menu.addItem(custom)
+    setEnabled(false, in: menu)
+    return menu
+  }
+
+  static func setEnabled(_ enabled: Bool, in menu: NSMenu) {
+    for item in menu.items where !item.isSeparatorItem {
+      item.isEnabled = enabled
+      if let submenu = item.submenu {
+        setEnabled(enabled, in: submenu)
+      }
+    }
   }
 }
 
