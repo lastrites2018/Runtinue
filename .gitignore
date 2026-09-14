@@ -11,11 +11,13 @@
 !/Package.swift
 !/VERSION
 !/Sources/**/*.swift
+!/Sources/RuntinueMenuBar/AppInformation.swift
 !/Sources/RuntinueMenuBar/Resources/RuntinueTemplate.png
 !/Packaging/RuntinueIcon.png
 !/Packaging/Runtinue.xcassets/Contents.json
 !/Packaging/Runtinue.xcassets/Runtinue.appiconset/Contents.json
 !/Tests/**/*.swift
+!/Tests/RuntinueMenuBarTests/MenuBarUsabilityTests.swift
 !/scripts/*.sh
 !/Resources/*.plist
 !/Resources/*.requirement.example

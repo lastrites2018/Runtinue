@@ -10,6 +10,7 @@ mkdir -p "$fixture/scripts" "$fixture/.githooks" \
   "$fixture/READMEAssets" \
   "$fixture/Packaging/ko.lproj" "$fixture/Packaging/en.lproj" \
   "$fixture/Sources/RuntinueMenuBar/Resources" \
+  "$fixture/Tests/RuntinueMenuBarTests" \
   "$fixture/Packaging/Runtinue.xcassets/Runtinue.appiconset"
 cp "$project_root/.gitignore" "$fixture/.gitignore"
 cp "$project_root/VERSION" "$fixture/VERSION"
@@ -20,6 +21,10 @@ chmod +x "$fixture/.githooks/pre-commit" "$fixture/.githooks/pre-push"
 printf '# Fixture\n' > "$fixture/README.md"
 printf '# Fixture rules\n' > "$fixture/AGENTS.md"
 printf '// Fixture\n' > "$fixture/Sources/Fixture.swift"
+cp "$project_root/Sources/RuntinueMenuBar/AppInformation.swift" \
+  "$fixture/Sources/RuntinueMenuBar/AppInformation.swift"
+cp "$project_root/Tests/RuntinueMenuBarTests/MenuBarUsabilityTests.swift" \
+  "$fixture/Tests/RuntinueMenuBarTests/MenuBarUsabilityTests.swift"
 cp "$project_root/READMEAssets/trip-start.png" "$fixture/READMEAssets/trip-start.png"
 cp "$project_root/READMEAssets/trip-protected.png" \
   "$fixture/READMEAssets/trip-protected.png"
@@ -40,7 +45,7 @@ git -C "$fixture" config commit.gpgsign false
 git -C "$fixture" config core.ignoreCase false
 git -C "$fixture" config core.hooksPath .githooks
 git -C "$fixture" add \
-  .gitignore AGENTS.md README.md READMEAssets VERSION Sources scripts .githooks Packaging
+  .gitignore AGENTS.md README.md READMEAssets VERSION Sources Tests scripts .githooks Packaging
 
 passed=0
 expect_success() {

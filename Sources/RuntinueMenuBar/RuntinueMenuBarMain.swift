@@ -68,6 +68,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private let refreshController = MenuBarRefreshController()
   private let commandController = MenuBarCommandController()
   private var informationTask: Task<Void, Never>?
+  private var appInformationWindow: AppInformationWindowController?
   // 불확실 상태에서 아이콘을 격상하는 표현 전용 기록이다. 동작 허용 판단에는 사용하지 않는다.
   private var lastKnownStatus: SupervisorStatusWire?
 
@@ -96,8 +97,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     startAdaptiveItem.title = L("작업 중 자동 유지…", "Keep awake during tasks…")
     startDeskItem.title = L("시간을 정해 유지", "Keep awake for a set time")
     stopItem.title = L("실행 유지 중단", "Stop keeping awake")
-    diagnosticsItem.title = L("진단 정보 보기…", "Diagnostics…")
-    historyItem.title = L("최근 기록 보기…", "Recent history…")
+    diagnosticsItem.title = L("진단 정보…", "Diagnostics…")
+    historyItem.title = L("최근 기록…", "Recent history…")
     eventsItem.title = L("이동 모드 기록 요약…", "Travel activity summary…")
     statusItem.button?.image = MenuBarStatusVisuals.image(for: .continuationMark)
     statusItem.button?.imagePosition = .imageLeading
@@ -136,6 +137,11 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       keyEquivalent: "r"
     )
     refreshItem.target = self
+    let aboutItem = NSMenuItem(
+      title: L("Runtinue 정보…", "About Runtinue…"),
+      action: #selector(showAppInformation), keyEquivalent: "")
+    aboutItem.target = self
+    aboutItem.identifier = NSUserInterfaceItemIdentifier("runtinue.about")
     let quitItem = NSMenuItem(
       title: L("메뉴바만 종료", "Quit menu bar only"),
       action: #selector(quit),
@@ -157,10 +163,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     menu.addItem(startDeskItem)
     menu.addItem(stopItem)
     menu.addItem(.separator())
-    menu.addItem(diagnosticsItem)
-    menu.addItem(historyItem)
-    menu.addItem(eventsItem)
-    menu.addItem(refreshItem)
+    menu.addItem(MenuBarSupportMenu.make(
+      history: historyItem, events: eventsItem, diagnostics: diagnosticsItem, refresh: refreshItem))
     let languageMenu = NSMenu()
     for (index, language) in InterfaceLanguage.allCases.enumerated() {
       let titles = [L("시스템 언어 사용", "Use system language"), "한국어", "English"]
@@ -174,6 +178,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     let languageItem = NSMenuItem(title: L("언어", "Language"), action: nil, keyEquivalent: "")
     languageItem.submenu = languageMenu
     menu.addItem(languageItem)
+    menu.addItem(aboutItem)
     menu.addItem(.separator())
     menu.addItem(quitItem)
     statusItem.menu = menu
@@ -189,6 +194,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     // Rebuild labels without briefly presenting the last successful status as current.
     statusItem.menu?.removeAllItems()
     configureMenu()
+    appInformationWindow?.reloadLabels()
     refresh()
   }
 
@@ -624,6 +630,15 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
       informationTask = nil
       setInformationItemsEnabled(true)
     }
+  }
+
+  @objc private func showAppInformation() {
+    if appInformationWindow == nil {
+      appInformationWindow = AppInformationWindowController()
+    }
+    appInformationWindow?.reloadLabels()
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    appInformationWindow?.showWindow(nil)
   }
 
   private func setInformationItemsEnabled(_ enabled: Bool) {
