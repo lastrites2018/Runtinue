@@ -19,6 +19,7 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(calls.creates.first?.type, kIOPMAssertionTypePreventUserIdleDisplaySleep as String)
     XCTAssertEqual(calls.creates.first?.level, IOPMAssertionLevel(kIOPMAssertionLevelOn))
     XCTAssertEqual(calls.creates.first?.reason, "Runtinue desk mode")
+    XCTAssertEqual(calls.readbacks, [101])
     XCTAssertTrue(calls.releases.isEmpty)
     let privilegedAcquires = await fixture.lease.acquireCount
     XCTAssertEqual(privilegedAcquires, 0)
@@ -108,6 +109,7 @@ final class TimedDisplayAssertionTests: XCTestCase {
     let failedStatus = await fixture.controller.status()
     XCTAssertEqual(failedStatus.verdict, .inactive)
     XCTAssertTrue(fixture.calls.snapshot().releases.isEmpty)
+    XCTAssertTrue(fixture.calls.snapshot().readbacks.isEmpty)
 
     let retry = try await fixture.start()
     XCTAssertEqual(retry.verdict, .protected(remaining: .seconds(60)))
@@ -155,6 +157,125 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(fixture.calls.snapshot().releases, [token.rawValue])
   }
 
+  func testCreationSuccessNeedsReadableActiveDisplayPropertiesBeforeClaimingProtection() async throws {
+    let unconfirmed: [RecordingIOPMCalls.Readback] = [
+      .unavailable, .off, .wrongType, .missingType, .missingLevel,
+    ]
+    for readback in unconfirmed {
+      let fixture = Fixture()
+      fixture.calls.setReadback(readback)
+      let started = try await fixture.start()
+      XCTAssertEqual(started.trip.phase, .active)
+      XCTAssertEqual(started.verdict, .unknown("desk display assertion is not confirmed active"))
+      XCTAssertEqual(fixture.calls.snapshot().readbacks, [101])
+      XCTAssertTrue(fixture.calls.snapshot().releases.isEmpty)
+      do {
+        _ = try await fixture.backend.acquire(reason: "unconfirmed ownership cannot be replaced")
+        XCTFail("a failed readback must not discard the owned assertion")
+      } catch {
+        XCTAssertEqual(error as? UserPowerAssertionError, .alreadyActive)
+      }
+      fixture.calls.setReadback(.created)
+      let confirmed = await fixture.controller.status()
+      XCTAssertEqual(confirmed.trip.sessionID, started.trip.sessionID)
+      XCTAssertEqual(confirmed.verdict, .protected(remaining: .seconds(60)))
+      XCTAssertEqual(fixture.calls.snapshot().creates.count, 1)
+      _ = await fixture.controller.stop()
+      XCTAssertEqual(fixture.calls.snapshot().releases, [101])
+    }
+  }
+
+  func testObservationAndStatusQueryNeverReuseAnEarlierPositiveReadback() async throws {
+    let fixture = Fixture()
+    _ = try await fixture.start()
+    fixture.calls.setReadback(.off)
+    let observed = await fixture.controller.observe(device: fixture.device())
+    XCTAssertEqual(observed.verdict, .unknown("desk display assertion is not confirmed active"))
+    fixture.calls.setReadback(.unavailable)
+    let queried = await fixture.controller.status()
+    XCTAssertEqual(queried.verdict, .unknown("desk display assertion is not confirmed active"))
+    XCTAssertEqual(fixture.calls.snapshot().readbacks, [101, 101, 101])
+    fixture.calls.setReadback(.created)
+    let confirmed = await fixture.controller.status()
+    XCTAssertEqual(confirmed.verdict, .protected(remaining: .seconds(60)))
+    XCTAssertEqual(fixture.calls.snapshot().readbacks, [101, 101, 101, 101])
+    _ = await fixture.controller.stop()
+  }
+
+  func testInvalidReadbackTokenDoesNotQueryAnotherAssertion() async throws {
+    let fixture = Fixture()
+    let token = try await fixture.backend.acquire(reason: "readback ownership fixture")
+    do {
+      _ = try await fixture.backend.isActive(UserPowerAssertionToken(rawValue: token.rawValue + 1))
+      XCTFail("an invalid token must not reach the readback boundary")
+    } catch {
+      XCTAssertEqual(error as? UserPowerAssertionError, .invalidToken)
+    }
+    XCTAssertTrue(fixture.calls.snapshot().readbacks.isEmpty)
+    try await fixture.backend.release(token)
+  }
+
+  func testUnconfirmedReadbackCannotSuppressExpiryOrSafetyReleaseAndRecovery() async throws {
+    for expires in [true, false] {
+      let fixture = Fixture(releaseResults: [kIOReturnError, kIOReturnSuccess])
+      _ = try await fixture.start()
+      fixture.calls.setReadback(.unavailable)
+      let unconfirmed = await fixture.controller.status()
+      XCTAssertEqual(unconfirmed.verdict, .unknown("desk display assertion is not confirmed active"))
+      fixture.clock.advance(seconds: expires ? 60 : 5)
+      let pending = await fixture.controller.observe(
+        device: fixture.device(thermal: expires ? .nominal : .critical))
+      XCTAssertEqual(pending.trip.phase, .recoveryPending)
+      guard case .recoveryPending = pending.verdict else {
+        return XCTFail("a failed release must remain visible")
+      }
+      XCTAssertEqual(fixture.calls.snapshot().releases, [101])
+      let recovered = await fixture.controller.retryPendingRelease()
+      XCTAssertEqual(recovered.trip.phase, .ended)
+      if expires {
+        XCTAssertEqual(recovered.trip.stopReason, .hardDeadlineReached)
+        XCTAssertEqual(recovered.verdict, .inactive)
+      } else {
+        guard case .safety = recovered.trip.stopReason, case .unsafe = recovered.verdict else {
+          return XCTFail("recovery must preserve the original safety stop")
+        }
+      }
+      XCTAssertEqual(fixture.calls.snapshot().releases, [101, 101])
+    }
+  }
+
+  func testLateReadbackCannotResurrectAStoppedSessionOrConfirmItsReplacement() async throws {
+    for startsReplacement in [false, true] {
+      let fixture = Fixture()
+      let backend = DelayedReadbackBackend()
+      let controller = DeskModeController(
+        directController: DirectSafetyLeaseController(
+          leaseBackend: fixture.lease, ownerUID: 501, clock: fixture.clock),
+        assertionBackend: backend, clock: fixture.clock)
+      let original = try await controller.start(
+        allowClosedLid: false, hardCap: .seconds(60), device: fixture.device())
+      await backend.blockNextReadback()
+      let reading = Task { await controller.status() }
+      await backend.waitUntilReadbackIsBlocked()
+      _ = await controller.stop()
+      if startsReplacement {
+        await backend.setConfirmed(false)
+        _ = try await controller.start(
+          allowClosedLid: false, hardCap: .seconds(60), device: fixture.device())
+      }
+      await backend.finishReadback()
+      let result = await reading.value
+      if startsReplacement {
+        XCTAssertNotEqual(result.trip.sessionID, original.trip.sessionID)
+        XCTAssertEqual(result.verdict, .unknown("desk display assertion is not confirmed active"))
+        _ = await controller.stop()
+      } else {
+        XCTAssertEqual(result.trip.phase, .ended)
+        XCTAssertEqual(result.verdict, .inactive)
+      }
+    }
+  }
+
   func testClosedLidSessionKeepsUsingOnlyThePrivilegedLeasePath() async throws {
     let fixture = Fixture()
     let started = try await fixture.controller.start(
@@ -163,6 +284,7 @@ final class TimedDisplayAssertionTests: XCTestCase {
     let privilegedAcquires = await fixture.lease.acquireCount
     XCTAssertEqual(privilegedAcquires, 1)
     XCTAssertTrue(fixture.calls.snapshot().creates.isEmpty)
+    XCTAssertTrue(fixture.calls.snapshot().readbacks.isEmpty)
     _ = await fixture.controller.stop()
     XCTAssertTrue(fixture.calls.snapshot().releases.isEmpty)
   }
@@ -235,6 +357,10 @@ private struct Fixture {
 }
 
 private final class RecordingIOPMCalls: @unchecked Sendable {
+  enum Readback: Sendable {
+    case created, unavailable, off, wrongType, missingType, missingLevel
+  }
+
   struct Creation: Sendable {
     let type: String
     let level: IOPMAssertionLevel
@@ -244,11 +370,15 @@ private final class RecordingIOPMCalls: @unchecked Sendable {
   struct Snapshot: Sendable {
     let creates: [Creation]
     let releases: [IOPMAssertionID]
+    let readbacks: [IOPMAssertionID]
   }
 
   private let lock = NSLock()
   private var creates: [Creation] = []
   private var releases: [IOPMAssertionID] = []
+  private var readbacks: [IOPMAssertionID] = []
+  private var assertions: [IOPMAssertionID: Creation] = [:]
+  private var readback: Readback = .created
   private var createResults: [IOReturn]
   private var releaseResults: [IOReturn]
   private var nextID: IOPMAssertionID = 101
@@ -263,26 +393,109 @@ private final class RecordingIOPMCalls: @unchecked Sendable {
       create: { [self] type, level, reason, id in
         lock.lock()
         defer { lock.unlock() }
-        creates.append(Creation(type: type as String, level: level, reason: reason as String))
+        let creation = Creation(type: type as String, level: level, reason: reason as String)
+        creates.append(creation)
         let result = createResults.isEmpty ? kIOReturnSuccess : createResults.removeFirst()
         if result == kIOReturnSuccess {
           id.pointee = nextID
+          assertions[nextID] = creation
           nextID += 1
         }
         return result
+      },
+      copyProperties: { [self] id in
+        lock.lock()
+        defer { lock.unlock() }
+        readbacks.append(id)
+        guard let creation = assertions[id] else { return nil }
+        // Default readback is derived from the actual production create call.
+        var properties: [String: Any] = [
+          kIOPMAssertionTypeKey as String: creation.type,
+          kIOPMAssertionLevelKey as String: NSNumber(value: creation.level),
+        ]
+        switch readback {
+        case .created: break
+        case .unavailable: return nil
+        case .off:
+          properties[kIOPMAssertionLevelKey as String] = NSNumber(value: kIOPMAssertionLevelOff)
+        case .wrongType:
+          properties[kIOPMAssertionTypeKey as String] = kIOPMAssertionTypePreventUserIdleSystemSleep
+        case .missingType:
+          properties.removeValue(forKey: kIOPMAssertionTypeKey as String)
+        case .missingLevel:
+          properties.removeValue(forKey: kIOPMAssertionLevelKey as String)
+        }
+        return properties as CFDictionary
       },
       release: { [self] id in
         lock.lock()
         defer { lock.unlock() }
         releases.append(id)
-        return releaseResults.isEmpty ? kIOReturnSuccess : releaseResults.removeFirst()
+        let result = releaseResults.isEmpty ? kIOReturnSuccess : releaseResults.removeFirst()
+        if result == kIOReturnSuccess { assertions.removeValue(forKey: id) }
+        return result
       })
+  }
+
+  func setReadback(_ readback: Readback) {
+    lock.lock()
+    defer { lock.unlock() }
+    self.readback = readback
   }
 
   func snapshot() -> Snapshot {
     lock.lock()
     defer { lock.unlock() }
-    return Snapshot(creates: creates, releases: releases)
+    return Snapshot(creates: creates, releases: releases, readbacks: readbacks)
+  }
+}
+
+// Separately exercise the asynchronous protocol boundary without blocking a thread.
+private actor DelayedReadbackBackend: UserPowerAssertionBackend {
+  private var token: UserPowerAssertionToken?
+  private var nextID: UInt32 = 1
+  private var confirmed = true
+  private var shouldBlock = false
+  private var blockedReadback: CheckedContinuation<Void, Never>?
+  private var blockedObserver: CheckedContinuation<Void, Never>?
+
+  func acquire(reason: String) async throws -> UserPowerAssertionToken {
+    let acquired = UserPowerAssertionToken(rawValue: nextID)
+    nextID += 1
+    token = acquired
+    return acquired
+  }
+
+  func isActive(_ token: UserPowerAssertionToken) async throws -> Bool {
+    guard self.token == token else { throw UserPowerAssertionError.invalidToken }
+    let result = confirmed
+    if shouldBlock {
+      shouldBlock = false
+      await withCheckedContinuation { continuation in
+        blockedReadback = continuation
+        blockedObserver?.resume()
+        blockedObserver = nil
+      }
+    }
+    return result
+  }
+
+  func release(_ token: UserPowerAssertionToken) async throws {
+    guard self.token == token else { throw UserPowerAssertionError.invalidToken }
+    self.token = nil
+  }
+
+  func blockNextReadback() { shouldBlock = true }
+  func setConfirmed(_ confirmed: Bool) { self.confirmed = confirmed }
+
+  func waitUntilReadbackIsBlocked() async {
+    if blockedReadback != nil { return }
+    await withCheckedContinuation { blockedObserver = $0 }
+  }
+
+  func finishReadback() {
+    blockedReadback?.resume()
+    blockedReadback = nil
   }
 }
 

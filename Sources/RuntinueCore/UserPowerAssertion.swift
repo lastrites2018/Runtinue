@@ -10,6 +10,8 @@ public struct UserPowerAssertionToken: Hashable, Sendable {
 
 public protocol UserPowerAssertionBackend: Sendable {
   func acquire(reason: String) async throws -> UserPowerAssertionToken
+  /// Reads the current state of this owned assertion, not a cached acquisition result.
+  func isActive(_ token: UserPowerAssertionToken) async throws -> Bool
   func release(_ token: UserPowerAssertionToken) async throws
 }
 
@@ -24,6 +26,10 @@ public actor UnavailableUserPowerAssertionBackend: UserPowerAssertionBackend {
   public init() {}
 
   public func acquire(reason: String) async throws -> UserPowerAssertionToken {
+    throw UserPowerAssertionError.unavailable
+  }
+
+  public func isActive(_ token: UserPowerAssertionToken) async throws -> Bool {
     throw UserPowerAssertionError.unavailable
   }
 

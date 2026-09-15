@@ -763,6 +763,44 @@ final class SupervisorRuntimeTests: XCTestCase {
     XCTAssertEqual(assertionSnapshot.releaseCount, 1)
   }
 
+  func testUnconfirmedDeskAssertionReachesTheWireWithoutLosingReleaseOwnership() async throws {
+    let clock = RuntimeManualClock()
+    let assertion = RuntimeFakePowerAssertionBackend()
+    let cache = RuntimeFakeCache()
+    let runtime = makeRuntime(
+      backend: RuntimeFakeBackend(clock: clock),
+      sampler: RuntimeFakeSampler(snapshots: [runtimeSnapshot(ssid: "Office", clock: clock)]),
+      cache: cache,
+      powerAssertionBackend: assertion,
+      clock: clock
+    )
+    let started = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(3_600))
+    XCTAssertEqual(started.verdict, .protected)
+
+    await assertion.setReadbackConfirmed(false)
+    let observed = await runtime.monitorOnce()
+    let queried = await runtime.currentStatus()
+    let cached = try await cache.load()
+    for status in [observed, queried] {
+      XCTAssertEqual(status.mode, .desk)
+      XCTAssertEqual(status.phase, .active)
+      XCTAssertEqual(status.sessionID, started.sessionID)
+      XCTAssertEqual(status.verdict, .unknown)
+      XCTAssertFalse(status.closedLidAllowed)
+    }
+    XCTAssertEqual(cached?.verdict, .unknown)
+    let pending = await assertion.snapshot()
+    XCTAssertTrue(pending.isActive)
+    XCTAssertEqual(pending.releaseCount, 0)
+
+    let stopped = try await runtime.stop(expectedSessionID: started.sessionID)
+    XCTAssertEqual(stopped.phase, .ended)
+    XCTAssertEqual(stopped.verdict, .inactive)
+    let released = await assertion.snapshot()
+    XCTAssertFalse(released.isActive)
+    XCTAssertEqual(released.releaseCount, 1)
+  }
+
   func testClosedDeskModeUsesLivePrivilegedLeaseTruth() async throws {
     let clock = RuntimeManualClock()
     let backend = RuntimeFakeBackend(clock: clock)
@@ -1186,12 +1224,24 @@ private actor RuntimeFakePowerAssertionBackend: UserPowerAssertionBackend {
   private var acquireCount = 0
   private var releaseCount = 0
   private var active: UserPowerAssertionToken?
+  private var readbackConfirmed = true
 
   func acquire(reason: String) async throws -> UserPowerAssertionToken {
     acquireCount += 1
     let token = UserPowerAssertionToken(rawValue: UInt32(acquireCount))
     active = token
     return token
+  }
+
+  func isActive(_ token: UserPowerAssertionToken) async throws -> Bool {
+    guard active == token else {
+      throw UserPowerAssertionError.invalidToken
+    }
+    return readbackConfirmed
+  }
+
+  func setReadbackConfirmed(_ confirmed: Bool) {
+    readbackConfirmed = confirmed
   }
 
   func release(_ token: UserPowerAssertionToken) async throws {

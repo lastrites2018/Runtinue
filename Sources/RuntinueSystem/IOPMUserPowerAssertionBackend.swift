@@ -1,3 +1,4 @@
+import Foundation
 import IOKit.pwr_mgt
 import RuntinueCore
 
@@ -6,11 +7,15 @@ struct IOPMAssertionOperations: Sendable {
   let create: @Sendable (
     CFString, IOPMAssertionLevel, CFString, UnsafeMutablePointer<IOPMAssertionID>
   ) -> IOReturn
+  let copyProperties: @Sendable (IOPMAssertionID) -> CFDictionary?
   let release: @Sendable (IOPMAssertionID) -> IOReturn
 
   static let system = IOPMAssertionOperations(
     create: { type, level, reason, assertionID in
       IOPMAssertionCreateWithName(type, level, reason, assertionID)
+    },
+    copyProperties: { assertionID in
+      IOPMAssertionCopyProperties(assertionID)?.takeRetainedValue()
     },
     release: { assertionID in IOPMAssertionRelease(assertionID) }
   )
@@ -47,6 +52,22 @@ public actor IOPMUserPowerAssertionBackend: UserPowerAssertionBackend {
     }
     activeAssertion = assertionID
     return UserPowerAssertionToken(rawValue: assertionID)
+  }
+
+  public func isActive(_ token: UserPowerAssertionToken) async throws -> Bool {
+    guard activeAssertion == token.rawValue else {
+      throw UserPowerAssertionError.invalidToken
+    }
+    guard let properties = operations.copyProperties(token.rawValue) as? [String: Any],
+      let type = properties[kIOPMAssertionTypeKey as String] as? String,
+      let level = properties[kIOPMAssertionLevelKey as String] as? NSNumber
+    else {
+      throw UserPowerAssertionError.unavailable
+    }
+    // Keep ownership even when readback fails or reports an inactive assertion.
+    // Only the release path may relinquish our responsibility for this token.
+    return type == kIOPMAssertionTypePreventUserIdleDisplaySleep as String
+      && level.uint32Value == IOPMAssertionLevel(kIOPMAssertionLevelOn)
   }
 
   public func release(_ token: UserPowerAssertionToken) async throws {

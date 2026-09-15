@@ -88,7 +88,7 @@ public actor DeskModeController {
     latestDevice = device
     latestSafetyVerdict = verdict
     safetyTracker = tracker
-    return makeAssertionStatus()
+    return await makeAssertionStatus()
   }
 
   @discardableResult
@@ -113,7 +113,7 @@ public actor DeskModeController {
       if let hardDeadline, clock.now() >= hardDeadline {
         return await releaseAssertion(reason: .hardDeadlineReached)
       }
-      return makeAssertionStatus()
+      return await makeAssertionStatus()
     case .assertionRecovery:
       return await retryPendingRelease()
     case .idle:
@@ -139,7 +139,7 @@ public actor DeskModeController {
     case .closedLease:
       return await directController.status()
     case .assertion:
-      return makeAssertionStatus()
+      return await makeAssertionStatus()
     case .assertionRecovery:
       return terminalStatus ?? makeRecoveryStatus("desk assertion release is pending")
     case .idle:
@@ -198,11 +198,27 @@ public actor DeskModeController {
     }
   }
 
-  private func makeAssertionStatus() -> SupervisorStatus {
+  private func makeAssertionStatus() async -> SupervisorStatus {
+    let observedToken = assertionToken
+    let observedSessionID = sessionID
+    let assertionIsActive: Bool
+    if let observedToken {
+      assertionIsActive = (try? await assertionBackend.isActive(observedToken)) == true
+    } else {
+      assertionIsActive = false
+    }
+    // A stop or a new session may run while the backend is being queried. Do not
+    // publish the old readback as protection for a different session or recovery.
+    guard mode == .assertion, assertionToken == observedToken, sessionID == observedSessionID else {
+      return await status()
+    }
+
     let verdict: SupervisorProtectionVerdict
     switch latestSafetyVerdict {
     case .safe:
-      if let hardDeadline,
+      if !assertionIsActive {
+        verdict = .unknown("desk display assertion is not confirmed active")
+      } else if let hardDeadline,
         let remaining = hardDeadline.durationSince(clock.now()),
         remaining > .zero
       {

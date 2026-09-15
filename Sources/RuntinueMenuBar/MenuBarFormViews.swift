@@ -180,7 +180,7 @@ final class AdaptiveConfigurationView: NSView {
 final class DeskConfigurationView: NSView {
   private let maximumProtectionField = MinutesField(120)
   private let closedLidButton = NSButton(
-    checkboxWithTitle: L("덮개를 닫아도 Mac을 잠자지 않게 하기", "Keep Mac awake with lid closed"),
+    checkboxWithTitle: L("덮개 닫기 허용", "Allow closed-lid operation"),
     target: nil,
     action: nil
   )
@@ -196,12 +196,15 @@ final class DeskConfigurationView: NSView {
         makeFormRow(label: L("덮개", "Lid"), control: closedLidButton),
       ],
       note: L(
-        "덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다. 설정한 시간이 지나면 잠자기 방지를 끝냅니다. 배터리와 macOS 열 압력 중 하나가 안전 기준을 벗어나면 잠자기 방지를 자동으로 중단합니다.",
-        "With the lid open, the display stays on while idle. Sleep prevention ends when the set time expires. It also stops automatically if the battery or macOS thermal pressure falls outside the safety limits."
+        "덮개 닫기를 허용하지 않을 때만 디스플레이 자동 꺼짐 방지를 요청합니다. 시간 만료 또는 배터리·macOS 열 압력의 안전 기준 위반 시 잠자기 방지 해제를 시도합니다. 해제가 확인될 때까지 복구 중으로 표시합니다.",
+        "Display idle-sleep prevention is requested only when closed-lid operation is off. At expiry or a battery or macOS thermal safety limit, release is attempted. Recovery stays pending until release is confirmed."
       )
     )
     closedLidButton.setAccessibilityLabel(closedLidButton.title)
     addPinnedSubview(stack)
+    // The translated safety note must fit in the alert's accessory view as well.
+    layoutSubtreeIfNeeded()
+    setFrameSize(NSSize(width: frame.width, height: max(frame.height, stack.fittingSize.height + 16)))
   }
 
   @available(*, unavailable)

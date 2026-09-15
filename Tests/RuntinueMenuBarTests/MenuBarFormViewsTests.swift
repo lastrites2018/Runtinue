@@ -127,20 +127,20 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
     XCTAssertEqual(settings.hardCapSeconds, 3_600)
   }
 
-  func testDeskFormUsesExplicitSleepAndDisplayWordingInBothLanguages() throws {
+  func testDeskFormQualifiesDisplayProtectionAndReleaseInBothLanguages() throws {
     _ = NSApplication.shared
     let expected = [
       (
         InterfaceLanguage.ko,
         "지속 시간(분)",
-        "덮개를 닫아도 Mac을 잠자지 않게 하기",
-        "덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다. 설정한 시간이 지나면 잠자기 방지를 끝냅니다. 배터리와 macOS 열 압력 중 하나가 안전 기준을 벗어나면 잠자기 방지를 자동으로 중단합니다."
+        "덮개 닫기 허용",
+        "덮개 닫기를 허용하지 않을 때만 디스플레이 자동 꺼짐 방지를 요청합니다. 시간 만료 또는 배터리·macOS 열 압력의 안전 기준 위반 시 잠자기 방지 해제를 시도합니다. 해제가 확인될 때까지 복구 중으로 표시합니다."
       ),
       (
         InterfaceLanguage.en,
         "Duration (min)",
-        "Keep Mac awake with lid closed",
-        "With the lid open, the display stays on while idle. Sleep prevention ends when the set time expires. It also stops automatically if the battery or macOS thermal pressure falls outside the safety limits."
+        "Allow closed-lid operation",
+        "Display idle-sleep prevention is requested only when closed-lid operation is off. At expiry or a battery or macOS thermal safety limit, release is attempted. Recovery stays pending until release is confirmed."
       ),
     ]
     for (language, durationLabel, closedLidLabel, note) in expected {
@@ -151,8 +151,39 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
         XCTAssertEqual(duration.accessibilityLabel(), durationLabel)
         XCTAssertEqual(closedLid.title, closedLidLabel)
         XCTAssertEqual(closedLid.accessibilityLabel(), closedLidLabel)
-        XCTAssertTrue(
-          descendants(form).compactMap { ($0 as? NSTextField)?.stringValue }.contains(note))
+        for state in [NSControl.StateValue.off, .on] {
+          closedLid.state = state
+          XCTAssertEqual(try form.input.validatedSettings().allowClosedLid, state == .on)
+          XCTAssertTrue(
+            descendants(form).compactMap { ($0 as? NSTextField)?.stringValue }.contains(note))
+        }
+      }
+    }
+  }
+
+  func testDeskCheckboxAndSafetyNoteFitTheirActualLayoutInBothLanguages() throws {
+    _ = NSApplication.shared
+    for language in [InterfaceLanguage.ko, .en] {
+      try InterfaceLanguage.$override.withValue(language) {
+        let form = DeskConfigurationView()
+        let window = NSWindow(
+          contentRect: form.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = form
+        defer { window.close() }
+        form.layoutSubtreeIfNeeded()
+
+        let checkbox: NSButton = try control("runtinue.desk.closedLid", in: form)
+        XCTAssertGreaterThanOrEqual(
+          checkbox.bounds.width, checkbox.intrinsicContentSize.width,
+          "the visible title and checkbox indicator must fit, not just the accessibility label")
+        let note = try XCTUnwrap(
+          descendants(form).compactMap { $0 as? NSTextField }
+            .first { $0.stringValue.contains("macOS") })
+        let noteFrame = form.convert(note.bounds, from: note)
+        XCTAssertGreaterThanOrEqual(noteFrame.minY, 0)
+        XCTAssertLessThanOrEqual(noteFrame.maxY, form.bounds.height)
+        XCTAssertGreaterThanOrEqual(note.bounds.height, note.fittingSize.height)
       }
     }
   }
@@ -242,6 +273,19 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
       XCTAssertEqual(availability.canStart, expectedEnabled)
       TimedSessionMenu.setEnabled(availability.canStart, in: menu)
       assertEnabled(expectedEnabled, in: menu)
+    }
+  }
+
+  func testUnconfirmedTimedStatusDoesNotPromiseDisplayProtection() {
+    for language in [InterfaceLanguage.ko, .en] {
+      InterfaceLanguage.$override.withValue(language) {
+        let unconfirmed = MenuBarPresentation(
+          status: status(phase: .active, mode: .desk, verdict: .unknown))
+        XCTAssertEqual(unconfirmed.tone, .unknown)
+        XCTAssertEqual(unconfirmed.statusIndicator, "?")
+        XCTAssertFalse(unconfirmed.detail.contains("디스플레이가 꺼지지 않음"))
+        XCTAssertFalse(unconfirmed.detail.contains("Display stays on while idle"))
+      }
     }
   }
 
