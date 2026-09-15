@@ -177,7 +177,7 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
   func testPresetsDispatchTheSelectedDurationWithoutCustomInput() throws {
     let target = TimedMenuActionTarget()
     let menu = makeMenu(target: target)
-    XCTAssertEqual(TimedSessionMenu.title, "일정 시간 동안 Mac을 자동으로 잠자지 않게 하기")
+    XCTAssertEqual(TimedSessionMenu.title, "일정 시간 잠자기 방지")
     XCTAssertEqual(menu.numberOfItems, 4)
     XCTAssertEqual(menu.item(at: 0)?.title, "분")
     XCTAssertEqual(menu.item(at: 1)?.title, "시간")

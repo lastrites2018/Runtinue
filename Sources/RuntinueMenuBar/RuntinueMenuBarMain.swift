@@ -749,7 +749,7 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 enum TimedSessionMenu {
   static var title: String {
-    L("일정 시간 동안 Mac을 자동으로 잠자지 않게 하기", "Keep Mac awake for a set time")
+    L("일정 시간 잠자기 방지", "Keep Mac awake for a set time")
   }
 
   static var customSettingsTitle: String {
