@@ -130,7 +130,7 @@ final class AppInformationWindowController: NSWindowController {
     let source = label(information.sourceStateText, identifier: "runtinue.about.sourceState")
     source.textColor = .secondaryLabelColor
     let scope = label(
-      L("현재 메뉴바 앱의 빌드 정보입니다.", "Build information for this menu bar app."),
+      L("현재 메뉴 막대 앱의 빌드 정보입니다.", "Build information for this menu bar app."),
       identifier: "runtinue.about.scope")
     scope.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
     scope.textColor = .secondaryLabelColor

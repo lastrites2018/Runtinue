@@ -43,7 +43,7 @@ final class MenuBarCommandControllerTests: KoreanInterfaceTestCase {
 
     XCTAssertFalse(controller.isCommandInFlight)
     XCTAssertEqual(visibleStatus, Self.inactiveStatus)
-    XCTAssertEqual(presentation.summary, "실행 유지 꺼짐")
+    XCTAssertEqual(presentation.summary, "실행 중인 모드 없음")
     XCTAssertEqual(updates.count, 2)
   }
 

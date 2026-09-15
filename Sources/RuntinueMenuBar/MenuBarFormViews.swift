@@ -180,7 +180,7 @@ final class AdaptiveConfigurationView: NSView {
 final class DeskConfigurationView: NSView {
   private let maximumProtectionField = MinutesField(120)
   private let closedLidButton = NSButton(
-    checkboxWithTitle: L("덮개를 닫아도 실행 유지", "Keep awake with lid closed"),
+    checkboxWithTitle: L("덮개를 닫아도 Mac을 잠자지 않게 하기", "Keep Mac awake with lid closed"),
     target: nil,
     action: nil
   )
@@ -192,14 +192,15 @@ final class DeskConfigurationView: NSView {
 
     let stack = makeFormStack(
       rows: [
-        makeFormRow(label: L("실행 유지 한도(분)", "Maximum time (min)"), control: maximumProtectionField),
-        makeFormRow(label: L("사용 방식", "Lid behavior"), control: closedLidButton),
+        makeFormRow(label: L("지속 시간(분)", "Duration (min)"), control: maximumProtectionField),
+        makeFormRow(label: L("덮개", "Lid"), control: closedLidButton),
       ],
       note: L(
-        "설정한 시간 동안 실행을 유지합니다. 위 항목을 끄면 덮개를 열어 둬야 합니다. 시간이 끝나면 수면을 허용합니다.",
-        "Keeps your Mac awake for the set time, then allows sleep. Leave the lid open when the option above is off."
+        "설정한 시간이 지나면 Mac이 다시 자동으로 잠자기 상태로 전환될 수 있습니다. 덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다.",
+        "After the set time, your Mac can sleep automatically again. With the lid open, the display stays on while idle."
       )
     )
+    closedLidButton.setAccessibilityLabel(closedLidButton.title)
     addPinnedSubview(stack)
   }
 

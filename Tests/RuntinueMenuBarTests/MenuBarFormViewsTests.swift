@@ -127,6 +127,36 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
     XCTAssertEqual(settings.hardCapSeconds, 3_600)
   }
 
+  func testDeskFormUsesExplicitSleepAndDisplayWordingInBothLanguages() throws {
+    _ = NSApplication.shared
+    let expected = [
+      (
+        InterfaceLanguage.ko,
+        "지속 시간(분)",
+        "덮개를 닫아도 Mac을 잠자지 않게 하기",
+        "설정한 시간이 지나면 Mac이 다시 자동으로 잠자기 상태로 전환될 수 있습니다. 덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다."
+      ),
+      (
+        InterfaceLanguage.en,
+        "Duration (min)",
+        "Keep Mac awake with lid closed",
+        "After the set time, your Mac can sleep automatically again. With the lid open, the display stays on while idle."
+      ),
+    ]
+    for (language, durationLabel, closedLidLabel, note) in expected {
+      try InterfaceLanguage.$override.withValue(language) {
+        let form = DeskConfigurationView()
+        let duration: NSTextField = try control("runtinue.desk.duration", in: form)
+        let closedLid: NSButton = try control("runtinue.desk.closedLid", in: form)
+        XCTAssertEqual(duration.accessibilityLabel(), durationLabel)
+        XCTAssertEqual(closedLid.title, closedLidLabel)
+        XCTAssertEqual(closedLid.accessibilityLabel(), closedLidLabel)
+        XCTAssertTrue(
+          descendants(form).compactMap { ($0 as? NSTextField)?.stringValue }.contains(note))
+      }
+    }
+  }
+
   private func control<T: NSView>(_ identifier: String, in view: NSView) throws -> T {
     if view.accessibilityIdentifier() == identifier, let control = view as? T {
       return control
@@ -136,6 +166,10 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
     }
     throw NSError(domain: "MissingFormControl", code: 1)
   }
+
+  private func descendants(_ view: NSView) -> [NSView] {
+    view.subviews.flatMap { [$0] + descendants($0) }
+  }
 }
 
 @MainActor
@@ -143,11 +177,12 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
   func testPresetsDispatchTheSelectedDurationWithoutCustomInput() throws {
     let target = TimedMenuActionTarget()
     let menu = makeMenu(target: target)
+    XCTAssertEqual(TimedSessionMenu.title, "일정 시간 동안 Mac을 자동으로 잠자지 않게 하기")
     XCTAssertEqual(menu.numberOfItems, 4)
     XCTAssertEqual(menu.item(at: 0)?.title, "분")
     XCTAssertEqual(menu.item(at: 1)?.title, "시간")
     XCTAssertTrue(try XCTUnwrap(menu.item(at: 2)).isSeparatorItem)
-    XCTAssertEqual(menu.item(at: 3)?.title, "직접 입력…")
+    XCTAssertEqual(menu.item(at: 3)?.title, "시간과 덮개 설정…")
     TimedSessionMenu.setEnabled(true, in: menu)
 
     let expectedMinutes = [[5, 10, 15, 20, 30, 45], [60, 120, 180, 240, 360, 480]]
@@ -211,9 +246,10 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
     UserDefaults.standard.set("en", forKey: InterfaceLanguage.preferenceKey)
     let target = TimedMenuActionTarget()
     let menu = makeMenu(target: target)
+    XCTAssertEqual(TimedSessionMenu.title, "Keep Mac awake for a set time")
     XCTAssertEqual(menu.item(at: 0)?.title, "Minutes")
     XCTAssertEqual(menu.item(at: 1)?.title, "Hours")
-    XCTAssertEqual(menu.item(at: 3)?.title, "Custom…")
+    XCTAssertEqual(menu.item(at: 3)?.title, "Time and lid settings…")
     let minutes = try XCTUnwrap(menu.item(at: 0)?.submenu)
     let hours = try XCTUnwrap(menu.item(at: 1)?.submenu)
     XCTAssertEqual(minutes.items.map(\.title), [

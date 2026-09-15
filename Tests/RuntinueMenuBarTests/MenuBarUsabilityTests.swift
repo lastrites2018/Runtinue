@@ -9,9 +9,11 @@ import XCTest
 final class MenuBarUsabilityTests: KoreanInterfaceTestCase {
   func testOpenTimedSessionShowsOnlyStateRemainingTimeAndLidHint() {
     let presentation = MenuBarPresentation(status: status())
-    XCTAssertEqual(presentation.headline, "실행 유지 중")
+    XCTAssertEqual(presentation.headline, "Mac이 잠자지 않도록 하는 중")
     XCTAssertEqual(presentation.guidance, "42분 남음")
-    XCTAssertEqual(presentation.detail, "덮개를 열고 사용")
+    XCTAssertEqual(
+      presentation.detail,
+      "비활성 상태에서도 디스플레이가 꺼지지 않음 | 덮개 열기 필요")
     XCTAssertNil(presentation.safetyChecklist)
     XCTAssertEqual(presentation.tone, .progress)
     XCTAssertEqual(presentation.statusIndicator, "✓")
@@ -22,7 +24,7 @@ final class MenuBarUsabilityTests: KoreanInterfaceTestCase {
     for seconds: Double? in [nil, 0, -1, .nan, .infinity, 86_401] {
       let presentation = MenuBarPresentation(status: status(remaining: seconds))
       XCTAssertEqual(presentation.guidance, "남은 시간 확인 불가")
-      XCTAssertEqual(presentation.headline, "실행 유지 중")
+      XCTAssertEqual(presentation.headline, "Mac이 잠자지 않도록 하는 중")
     }
     for seconds in [0.1, 1, 59.9] {
       XCTAssertEqual(
@@ -36,7 +38,7 @@ final class MenuBarUsabilityTests: KoreanInterfaceTestCase {
   func testTimedSupplementalDetailsAndObservationWarningsRemainVisible() {
     let presentation = MenuBarPresentation(
       status: status(detail: "fixture detail", issues: [.historyUnavailable]))
-    XCTAssertTrue(presentation.detail.hasPrefix("덮개를 열고 사용"))
+    XCTAssertTrue(presentation.detail.hasPrefix("비활성 상태에서도 디스플레이가 꺼지지 않음"))
     XCTAssertTrue(presentation.detail.contains("서비스의 추가 상태 정보"))
     XCTAssertTrue(presentation.detail.contains("일부 기록을 저장하지 못했습니다"))
     XCTAssertEqual(presentation.tone, .progress)
@@ -53,7 +55,7 @@ final class MenuBarUsabilityTests: KoreanInterfaceTestCase {
         status: status(phase: phase, verdict: verdict, detail: "fixture failure"))
       XCTAssertEqual(presentation.statusIndicator, indicator)
       XCTAssertEqual(presentation.guidance, "덮개를 닫지 마세요.")
-      XCTAssertNotEqual(presentation.headline, "실행 유지 중")
+      XCTAssertNotEqual(presentation.headline, "Mac이 잠자지 않도록 하는 중")
       XCTAssertTrue(presentation.detail.contains("진단 정보를 확인하세요"))
     }
     XCTAssertEqual(
@@ -171,9 +173,15 @@ final class MenuBarUsabilityTests: KoreanInterfaceTestCase {
     defer { controller.close() }
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("RuntinueFixture-" + UUID().uuidString))
     defer { pasteboard.releaseGlobally() }
-    for (language, title, headline, countdown) in [
-      ("ko", "Runtinue 정보", "실행 유지 중", "42분 남음"),
-      ("en", "About Runtinue", "Keeping awake", "42m remaining"),
+    for (language, title, headline, countdown, scopeText) in [
+      (
+        "ko", "Runtinue 정보", "Mac이 잠자지 않도록 하는 중", "42분 남음",
+        "현재 메뉴 막대 앱의 빌드 정보입니다."
+      ),
+      (
+        "en", "About Runtinue", "Keeping Mac awake", "42m remaining",
+        "Build information for this menu bar app."
+      ),
     ] {
       UserDefaults.standard.set(language, forKey: InterfaceLanguage.preferenceKey)
       controller.reloadLabels()
@@ -184,6 +192,8 @@ final class MenuBarUsabilityTests: KoreanInterfaceTestCase {
       let version: NSTextField = try control("runtinue.about.version", in: content)
       XCTAssertEqual(version.stringValue, controller.information.versionLine)
       XCTAssertTrue(version.isSelectable)
+      let scope: NSTextField = try control("runtinue.about.scope", in: content)
+      XCTAssertEqual(scope.stringValue, scopeText)
       for identifier in ["runtinue.about.copy", "runtinue.about.releases"] {
         let button: NSButton = try control(identifier, in: content)
         XCTAssertTrue(button.isEnabled)
