@@ -765,7 +765,7 @@ enum TimedSessionMenu {
     menu.autoenablesItems = false
     let groups: [(title: String, values: [Int], minutesPerUnit: Int)] = [
       (L("분", "Minutes"), [5, 10, 15, 20, 30, 45], 1),
-      (L("시간", "Hours"), [1, 2, 3, 4, 6, 8], 60),
+      (L("시간", "Hours"), [1, 2, 3, 4, 6, 8, 10, 12, 24], 60),
     ]
     for group in groups {
       let submenu = NSMenu(title: group.title)

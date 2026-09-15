@@ -196,8 +196,8 @@ final class DeskConfigurationView: NSView {
         makeFormRow(label: L("덮개", "Lid"), control: closedLidButton),
       ],
       note: L(
-        "설정한 시간이 지나면 Mac이 다시 자동으로 잠자기 상태로 전환될 수 있습니다. 덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다.",
-        "After the set time, your Mac can sleep automatically again. With the lid open, the display stays on while idle."
+        "덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다. 설정한 시간이 지나면 잠자기 방지를 끝냅니다. 배터리와 macOS 열 압력 중 하나가 안전 기준을 벗어나면 잠자기 방지를 자동으로 중단합니다.",
+        "With the lid open, the display stays on while idle. Sleep prevention ends when the set time expires. It also stops automatically if the battery or macOS thermal pressure falls outside the safety limits."
       )
     )
     closedLidButton.setAccessibilityLabel(closedLidButton.title)

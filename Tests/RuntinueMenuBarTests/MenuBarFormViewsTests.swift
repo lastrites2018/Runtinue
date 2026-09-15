@@ -134,13 +134,13 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
         InterfaceLanguage.ko,
         "지속 시간(분)",
         "덮개를 닫아도 Mac을 잠자지 않게 하기",
-        "설정한 시간이 지나면 Mac이 다시 자동으로 잠자기 상태로 전환될 수 있습니다. 덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다."
+        "덮개를 열어 두면 비활성 상태에서도 디스플레이가 꺼지지 않습니다. 설정한 시간이 지나면 잠자기 방지를 끝냅니다. 배터리와 macOS 열 압력 중 하나가 안전 기준을 벗어나면 잠자기 방지를 자동으로 중단합니다."
       ),
       (
         InterfaceLanguage.en,
         "Duration (min)",
         "Keep Mac awake with lid closed",
-        "After the set time, your Mac can sleep automatically again. With the lid open, the display stays on while idle."
+        "With the lid open, the display stays on while idle. Sleep prevention ends when the set time expires. It also stops automatically if the battery or macOS thermal pressure falls outside the safety limits."
       ),
     ]
     for (language, durationLabel, closedLidLabel, note) in expected {
@@ -185,7 +185,10 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
     XCTAssertEqual(menu.item(at: 3)?.title, "시간과 덮개 설정…")
     TimedSessionMenu.setEnabled(true, in: menu)
 
-    let expectedMinutes = [[5, 10, 15, 20, 30, 45], [60, 120, 180, 240, 360, 480]]
+    let expectedMinutes = [
+      [5, 10, 15, 20, 30, 45],
+      [60, 120, 180, 240, 360, 480, 600, 720, 1_440],
+    ]
     var expectedInputs: [DeskFormInput] = []
     for (groupIndex, durations) in expectedMinutes.enumerated() {
       let submenu = try XCTUnwrap(menu.item(at: groupIndex)?.submenu)
@@ -256,10 +259,11 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
       "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes", "45 minutes",
     ])
     XCTAssertEqual(hours.items.map(\.title), [
-      "1 hour", "2 hours", "3 hours", "4 hours", "6 hours", "8 hours",
+      "1 hour", "2 hours", "3 hours", "4 hours", "6 hours", "8 hours", "10 hours", "12 hours",
+      "24 hours",
     ])
     XCTAssertEqual(
-      (hours.item(at: 5)?.representedObject as? DeskFormInput)?.maximumProtectionMinutes, "480")
+      (hours.item(at: 8)?.representedObject as? DeskFormInput)?.maximumProtectionMinutes, "1440")
   }
 
   private func makeMenu(target: TimedMenuActionTarget) -> NSMenu {

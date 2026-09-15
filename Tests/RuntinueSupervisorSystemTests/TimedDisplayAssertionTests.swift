@@ -48,6 +48,39 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(fixture.calls.snapshot().releases, [101])
   }
 
+  func testMaximumTimedSessionDurationIsAccepted() async throws {
+    let fixture = Fixture()
+    let started = try await fixture.controller.start(
+      allowClosedLid: false,
+      hardCap: CommuteTripRequest.maximumHardCap,
+      device: fixture.device()
+    )
+
+    XCTAssertEqual(
+      started.verdict,
+      .protected(remaining: CommuteTripRequest.maximumHardCap)
+    )
+    _ = await fixture.controller.stop()
+  }
+
+  func testOpenTimedSessionStopsWhenBatteryFallsBelowTheSafetyFloor() async throws {
+    let fixture = Fixture()
+    _ = try await fixture.start()
+    fixture.clock.advance(seconds: 5)
+
+    let stopped = await fixture.controller.observe(device: fixture.device(battery: 9))
+
+    XCTAssertEqual(stopped.trip.phase, .ended)
+    XCTAssertEqual(
+      stopped.trip.stopReason,
+      .safety(.batteryBelowFloor(observed: 9, floor: 10))
+    )
+    guard case .unsafe = stopped.verdict else {
+      return XCTFail("expected unsafe battery status, got \(stopped.verdict)")
+    }
+    XCTAssertEqual(fixture.calls.snapshot().releases, [101])
+  }
+
   func testSafetyStopAndLidClosureStillReleaseTheDisplayAssertion() async throws {
     let conditions: [(ThermalLevel, LidState)] = [(.critical, .open), (.nominal, .closed)]
     for (thermal, lid) in conditions {
@@ -133,6 +166,40 @@ final class TimedDisplayAssertionTests: XCTestCase {
     _ = await fixture.controller.stop()
     XCTAssertTrue(fixture.calls.snapshot().releases.isEmpty)
   }
+
+  func testClosedLidTimedSessionStopsForBatteryAndThermalSafetyLimits() async throws {
+    let cases: [(battery: Int, thermal: ThermalLevel, reason: DeviceSafetyStopReason)] = [
+      (29, .nominal, .batteryBelowFloor(observed: 29, floor: 30)),
+      (80, .fair, .thermalLimitReached(observed: .fair, cutoff: .fair)),
+    ]
+
+    for testCase in cases {
+      let fixture = Fixture()
+      _ = try await fixture.controller.start(
+        allowClosedLid: true,
+        hardCap: .seconds(60),
+        device: fixture.device(lid: .closed)
+      )
+      fixture.clock.advance(seconds: 5)
+
+      let stopped = await fixture.controller.observe(
+        device: fixture.device(
+          battery: testCase.battery,
+          thermal: testCase.thermal,
+          lid: .closed
+        )
+      )
+
+      XCTAssertEqual(stopped.trip.phase, .ended)
+      XCTAssertEqual(stopped.trip.stopReason, .safety(testCase.reason))
+      guard case .unsafe = stopped.verdict else {
+        return XCTFail("expected unsafe safety status, got \(stopped.verdict)")
+      }
+      let releaseCount = await fixture.lease.releaseCount
+      XCTAssertEqual(releaseCount, 1)
+      XCTAssertTrue(fixture.calls.snapshot().releases.isEmpty)
+    }
+  }
 }
 
 private struct Fixture {
@@ -155,9 +222,13 @@ private struct Fixture {
     try await controller.start(allowClosedLid: false, hardCap: .seconds(60), device: device())
   }
 
-  func device(thermal: ThermalLevel = .nominal, lid: LidState = .open) -> DeviceSafetySnapshot {
+  func device(
+    battery: Int? = 80,
+    thermal: ThermalLevel = .nominal,
+    lid: LidState = .open
+  ) -> DeviceSafetySnapshot {
     DeviceSafetySnapshot(
-      batteryPercent: 80, powerConnection: .battery, thermalLevel: thermal,
+      batteryPercent: battery, powerConnection: .battery, thermalLevel: thermal,
       lidState: lid, externalDisplayState: .absent, lowPowerModeEnabled: false,
       capturedAt: clock.now())
   }
@@ -236,6 +307,7 @@ private actor DisplayTestLeaseBackend: SupervisorLeaseBackend {
   private let clock: DisplayTestClock
   private var observation: SupervisorHelperObservation?
   private(set) var acquireCount = 0
+  private(set) var releaseCount = 0
 
   init(clock: DisplayTestClock) { self.clock = clock }
 
@@ -249,6 +321,7 @@ private actor DisplayTestLeaseBackend: SupervisorLeaseBackend {
   }
 
   func release(sessionID: UUID, lease: LeaseToken, reason: TripStopReason) async -> LeaseReleaseOutcome {
+    releaseCount += 1
     observation = nil
     return .released
   }
