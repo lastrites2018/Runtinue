@@ -18,6 +18,7 @@
 !/Packaging/Runtinue.xcassets/Runtinue.appiconset/Contents.json
 !/Tests/**/*.swift
 !/Tests/RuntinueMenuBarTests/MenuBarUsabilityTests.swift
+!/Tests/RuntinueSupervisorSystemTests/TimedDisplayAssertionTests.swift
 !/scripts/*.sh
 !/Resources/*.plist
 !/Resources/*.requirement.example

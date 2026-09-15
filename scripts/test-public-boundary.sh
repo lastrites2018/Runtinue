@@ -11,6 +11,7 @@ mkdir -p "$fixture/scripts" "$fixture/.githooks" \
   "$fixture/Packaging/ko.lproj" "$fixture/Packaging/en.lproj" \
   "$fixture/Sources/RuntinueMenuBar/Resources" \
   "$fixture/Tests/RuntinueMenuBarTests" \
+  "$fixture/Tests/RuntinueSupervisorSystemTests" \
   "$fixture/Packaging/Runtinue.xcassets/Runtinue.appiconset"
 cp "$project_root/.gitignore" "$fixture/.gitignore"
 cp "$project_root/VERSION" "$fixture/VERSION"
@@ -25,6 +26,8 @@ cp "$project_root/Sources/RuntinueMenuBar/AppInformation.swift" \
   "$fixture/Sources/RuntinueMenuBar/AppInformation.swift"
 cp "$project_root/Tests/RuntinueMenuBarTests/MenuBarUsabilityTests.swift" \
   "$fixture/Tests/RuntinueMenuBarTests/MenuBarUsabilityTests.swift"
+cp "$project_root/Tests/RuntinueSupervisorSystemTests/TimedDisplayAssertionTests.swift" \
+  "$fixture/Tests/RuntinueSupervisorSystemTests/TimedDisplayAssertionTests.swift"
 cp "$project_root/READMEAssets/trip-start.png" "$fixture/READMEAssets/trip-start.png"
 cp "$project_root/READMEAssets/trip-protected.png" \
   "$fixture/READMEAssets/trip-protected.png"
