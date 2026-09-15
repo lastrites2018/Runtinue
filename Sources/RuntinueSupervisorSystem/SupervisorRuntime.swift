@@ -159,9 +159,11 @@ public actor SupervisorRuntime {
     if let startupRecoveryDetail {
       status = makeStartupRecoveryStatus(detail: startupRecoveryDetail)
     } else if let deskConfiguration {
+      let current = await deskController.status()
+      settleDeskSession(current)
       status = makeWireStatus(
-        await deskController.status(),
-        mode: .desk,
+        current,
+        mode: self.deskConfiguration == nil ? .none : .desk,
         closedLidAllowed: deskConfiguration.allowClosedLid
       )
     } else if adaptiveConfiguration != nil {
@@ -364,10 +366,8 @@ public actor SupervisorRuntime {
     case .idle, .waitingForHotspot, .releasingLease, .ended:
       break
     }
+    settleDeskSession(status)
     if status.trip.phase == .idle || status.trip.phase == .ended {
-      deskConfiguration = nil
-      deskDisablePending = false
-      stopMonitor()
       try? await configurationStore?.remove()
     }
     let wire = makeWireStatus(
@@ -376,6 +376,13 @@ public actor SupervisorRuntime {
       closedLidAllowed: configuration.allowClosedLid
     )
     return await persist(wire)
+  }
+
+  private func settleDeskSession(_ status: SupervisorStatus) {
+    guard status.trip.phase == .idle || status.trip.phase == .ended else { return }
+    deskConfiguration = nil
+    deskDisablePending = false
+    stopMonitor()
   }
 
   @discardableResult
@@ -536,12 +543,13 @@ public actor SupervisorRuntime {
       hardCap: hardCap
     )
     deskDisablePending = false
-    if automaticMonitoring {
+    settleDeskSession(status)
+    if deskConfiguration != nil, automaticMonitoring {
       startMonitorIfNeeded()
     }
     let wire = makeWireStatus(
       status,
-      mode: .desk,
+      mode: deskConfiguration == nil ? .none : .desk,
       closedLidAllowed: allowClosedLid
     )
     return await persist(wire)
@@ -630,9 +638,11 @@ public actor SupervisorRuntime {
     if let startupRecoveryDetail {
       wire = makeStartupRecoveryStatus(detail: startupRecoveryDetail)
     } else if let deskConfiguration {
+      let current = await deskController.status()
+      settleDeskSession(current)
       wire = makeWireStatus(
-        await deskController.status(),
-        mode: .desk,
+        current,
+        mode: self.deskConfiguration == nil ? .none : .desk,
         closedLidAllowed: deskConfiguration.allowClosedLid
       )
     } else if adaptiveConfiguration != nil, commuteTarget == nil {

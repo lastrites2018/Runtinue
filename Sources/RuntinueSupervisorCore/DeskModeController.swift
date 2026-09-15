@@ -13,6 +13,7 @@ public actor DeskModeController {
   private enum Mode: Equatable, Sendable {
     case idle
     case assertion
+    case assertionReleasing
     case assertionRecovery
     case closedLease
   }
@@ -114,6 +115,8 @@ public actor DeskModeController {
         return await releaseAssertion(reason: .hardDeadlineReached)
       }
       return await makeAssertionStatus()
+    case .assertionReleasing:
+      return makeReleasingStatus()
     case .assertionRecovery:
       return await retryPendingRelease()
     case .idle:
@@ -127,8 +130,12 @@ public actor DeskModeController {
     case .closedLease:
       let status = await directController.stop()
       return settleClosedLease(status)
-    case .assertion, .assertionRecovery:
+    case .assertion:
       return await releaseAssertion(reason: .userRequested)
+    case .assertionReleasing:
+      return makeReleasingStatus()
+    case .assertionRecovery:
+      return await retryPendingRelease()
     case .idle:
       return terminalStatus ?? makeIdleStatus()
     }
@@ -140,6 +147,8 @@ public actor DeskModeController {
       return await directController.status()
     case .assertion:
       return await makeAssertionStatus()
+    case .assertionReleasing:
+      return makeReleasingStatus()
     case .assertionRecovery:
       return terminalStatus ?? makeRecoveryStatus("desk assertion release is pending")
     case .idle:
@@ -166,16 +175,23 @@ public actor DeskModeController {
       return settleClosedLease(await directController.reconcileRecovery())
     case .assertionRecovery:
       return await retryPendingRelease()
-    case .idle, .assertion:
+    case .idle, .assertion, .assertionReleasing:
       return await status()
     }
   }
 
   private func releaseAssertion(reason: TripStopReason) async -> SupervisorStatus {
+    guard mode != .assertionReleasing else {
+      return makeReleasingStatus()
+    }
+    // Invalidate outstanding readbacks and exclude duplicate releases before
+    // crossing the backend actor boundary. Retain ownership until release succeeds.
+    pendingReleaseReason = pendingReleaseReason ?? reason
+    let reason = pendingReleaseReason ?? reason
+    mode = .assertionReleasing
     guard let assertionToken else {
       let status = makeRecoveryStatus("desk assertion token is missing")
       mode = .assertionRecovery
-      pendingReleaseReason = reason
       terminalStatus = status
       return status
     }
@@ -192,7 +208,6 @@ public actor DeskModeController {
         "desk assertion release failed: \(error)"
       )
       mode = .assertionRecovery
-      pendingReleaseReason = reason
       terminalStatus = status
       return status
     }
@@ -212,13 +227,16 @@ public actor DeskModeController {
     guard mode == .assertion, assertionToken == observedToken, sessionID == observedSessionID else {
       return await status()
     }
+    guard assertionIsActive else {
+      return await releaseAssertion(
+        reason: .leaseRejected("desk display assertion is not confirmed active")
+      )
+    }
 
     let verdict: SupervisorProtectionVerdict
     switch latestSafetyVerdict {
     case .safe:
-      if !assertionIsActive {
-        verdict = .unknown("desk display assertion is not confirmed active")
-      } else if let hardDeadline,
+      if let hardDeadline,
         let remaining = hardDeadline.durationSince(clock.now()),
         remaining > .zero
       {
@@ -289,6 +307,22 @@ public actor DeskModeController {
         hotspotWaitingReason: nil
       ),
       verdict: verdict,
+      lastHeartbeat: nil,
+      latestDevice: latestDevice
+    )
+  }
+
+  private func makeReleasingStatus() -> SupervisorStatus {
+    SupervisorStatus(
+      trip: TripStatus(
+        phase: .releasingLease,
+        sessionID: sessionID,
+        hotspotDeadline: nil,
+        hardDeadline: hardDeadline,
+        stopReason: pendingReleaseReason,
+        hotspotWaitingReason: nil
+      ),
+      verdict: .releasing(pendingReleaseReason),
       lastHeartbeat: nil,
       latestDevice: latestDevice
     )

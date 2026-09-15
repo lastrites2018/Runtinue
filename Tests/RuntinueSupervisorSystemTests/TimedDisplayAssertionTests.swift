@@ -1,7 +1,9 @@
 import Foundation
 import IOKit.pwr_mgt
 import RuntinueCore
+import RuntinueIPC
 import RuntinueSupervisorCore
+import RuntinueSupervisorSystem
 import XCTest
 
 @testable import RuntinueSystem
@@ -157,49 +159,78 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(fixture.calls.snapshot().releases, [token.rawValue])
   }
 
-  func testCreationSuccessNeedsReadableActiveDisplayPropertiesBeforeClaimingProtection() async throws {
+  func testCreationSuccessWithUnconfirmedReadbackImmediatelyReleasesOrRecovers() async throws {
     let unconfirmed: [RecordingIOPMCalls.Readback] = [
       .unavailable, .off, .wrongType, .missingType, .missingLevel,
     ]
     for readback in unconfirmed {
-      let fixture = Fixture()
-      fixture.calls.setReadback(readback)
-      let started = try await fixture.start()
-      XCTAssertEqual(started.trip.phase, .active)
-      XCTAssertEqual(started.verdict, .unknown("desk display assertion is not confirmed active"))
-      XCTAssertEqual(fixture.calls.snapshot().readbacks, [101])
-      XCTAssertTrue(fixture.calls.snapshot().releases.isEmpty)
-      do {
-        _ = try await fixture.backend.acquire(reason: "unconfirmed ownership cannot be replaced")
-        XCTFail("a failed readback must not discard the owned assertion")
-      } catch {
-        XCTAssertEqual(error as? UserPowerAssertionError, .alreadyActive)
+      for releaseFails in [false, true] {
+        let fixture = Fixture(releaseResults: releaseFails ? [kIOReturnError] : [])
+        fixture.calls.setReadback(readback)
+        let started = try await fixture.controller.start(
+          allowClosedLid: false, hardCap: CommuteTripRequest.maximumHardCap,
+          device: fixture.device())
+        XCTAssertEqual(started.trip.phase, releaseFails ? .recoveryPending : .ended)
+        XCTAssertEqual(fixture.calls.snapshot().readbacks, [101])
+        XCTAssertEqual(fixture.calls.snapshot().releases, [101])
+        if releaseFails {
+          do {
+            _ = try await fixture.backend.acquire(reason: "unreleased ownership cannot be replaced")
+            XCTFail("failed release must retain the owned assertion")
+          } catch {
+            XCTAssertEqual(error as? UserPowerAssertionError, .alreadyActive)
+          }
+          do {
+            _ = try await fixture.start()
+            XCTFail("recovery must block a replacement session")
+          } catch {
+            XCTAssertEqual(error as? DeskModeError, .sessionAlreadyRunning)
+          }
+        }
+        fixture.calls.setReadback(.created)
+        let afterReadbackRecovers = await fixture.controller.status()
+        XCTAssertEqual(afterReadbackRecovers.trip.phase, started.trip.phase)
+        XCTAssertEqual(fixture.calls.snapshot().readbacks, [101])
+        let ended = await fixture.controller.retryPendingRelease()
+        XCTAssertEqual(ended.trip.phase, .ended)
+        XCTAssertEqual(ended.verdict, .inactive)
+        XCTAssertEqual(
+          ended.trip.stopReason, .leaseRejected("desk display assertion is not confirmed active"))
+        XCTAssertEqual(fixture.calls.snapshot().releases, releaseFails ? [101, 101] : [101])
+        let restarted = try await fixture.start()
+        XCTAssertNotEqual(restarted.trip.sessionID, started.trip.sessionID)
+        XCTAssertEqual(restarted.verdict, .protected(remaining: .seconds(60)))
+        _ = await fixture.controller.stop()
       }
-      fixture.calls.setReadback(.created)
-      let confirmed = await fixture.controller.status()
-      XCTAssertEqual(confirmed.trip.sessionID, started.trip.sessionID)
-      XCTAssertEqual(confirmed.verdict, .protected(remaining: .seconds(60)))
-      XCTAssertEqual(fixture.calls.snapshot().creates.count, 1)
-      _ = await fixture.controller.stop()
-      XCTAssertEqual(fixture.calls.snapshot().releases, [101])
     }
   }
 
-  func testObservationAndStatusQueryNeverReuseAnEarlierPositiveReadback() async throws {
-    let fixture = Fixture()
-    _ = try await fixture.start()
-    fixture.calls.setReadback(.off)
-    let observed = await fixture.controller.observe(device: fixture.device())
-    XCTAssertEqual(observed.verdict, .unknown("desk display assertion is not confirmed active"))
-    fixture.calls.setReadback(.unavailable)
-    let queried = await fixture.controller.status()
-    XCTAssertEqual(queried.verdict, .unknown("desk display assertion is not confirmed active"))
-    XCTAssertEqual(fixture.calls.snapshot().readbacks, [101, 101, 101])
-    fixture.calls.setReadback(.created)
-    let confirmed = await fixture.controller.status()
-    XCTAssertEqual(confirmed.verdict, .protected(remaining: .seconds(60)))
-    XCTAssertEqual(fixture.calls.snapshot().readbacks, [101, 101, 101, 101])
-    _ = await fixture.controller.stop()
+  func testObservationAndStatusQueryReleaseInsteadOfReusingEarlierProtection() async throws {
+    let unconfirmed: [RecordingIOPMCalls.Readback] = [
+      .unavailable, .off, .wrongType, .missingType, .missingLevel,
+    ]
+    for readback in unconfirmed {
+      for useObservation in [false, true] {
+        for releaseFails in [false, true] {
+          let fixture = Fixture(releaseResults: releaseFails ? [kIOReturnError] : [])
+          _ = try await fixture.start()
+          fixture.calls.setReadback(readback)
+          let stopped = useObservation
+            ? await fixture.controller.observe(device: fixture.device())
+            : await fixture.controller.status()
+          XCTAssertEqual(stopped.trip.phase, releaseFails ? .recoveryPending : .ended)
+          XCTAssertEqual(fixture.calls.snapshot().readbacks, [101, 101])
+          XCTAssertEqual(fixture.calls.snapshot().releases, [101])
+          // Even a manual retry must preserve the original verification failure.
+          let ended = await fixture.controller.stop()
+          XCTAssertEqual(ended.trip.phase, .ended)
+          XCTAssertEqual(ended.verdict, .inactive)
+          XCTAssertEqual(
+            ended.trip.stopReason, .leaseRejected("desk display assertion is not confirmed active"))
+          XCTAssertEqual(fixture.calls.snapshot().releases, releaseFails ? [101, 101] : [101])
+        }
+      }
+    }
   }
 
   func testInvalidReadbackTokenDoesNotQueryAnotherAssertion() async throws {
@@ -220,8 +251,6 @@ final class TimedDisplayAssertionTests: XCTestCase {
       let fixture = Fixture(releaseResults: [kIOReturnError, kIOReturnSuccess])
       _ = try await fixture.start()
       fixture.calls.setReadback(.unavailable)
-      let unconfirmed = await fixture.controller.status()
-      XCTAssertEqual(unconfirmed.verdict, .unknown("desk display assertion is not confirmed active"))
       fixture.clock.advance(seconds: expires ? 60 : 5)
       let pending = await fixture.controller.observe(
         device: fixture.device(thermal: expires ? .nominal : .critical))
@@ -265,15 +294,106 @@ final class TimedDisplayAssertionTests: XCTestCase {
       }
       await backend.finishReadback()
       let result = await reading.value
+      XCTAssertEqual(result.trip.phase, .ended)
+      XCTAssertEqual(result.verdict, .inactive)
       if startsReplacement {
         XCTAssertNotEqual(result.trip.sessionID, original.trip.sessionID)
-        XCTAssertEqual(result.verdict, .unknown("desk display assertion is not confirmed active"))
-        _ = await controller.stop()
+        XCTAssertEqual(
+          result.trip.stopReason, .leaseRejected("desk display assertion is not confirmed active"))
       } else {
-        XCTAssertEqual(result.trip.phase, .ended)
-        XCTAssertEqual(result.verdict, .inactive)
+        XCTAssertEqual(result.trip.sessionID, original.trip.sessionID)
+        XCTAssertEqual(result.trip.stopReason, .userRequested)
       }
     }
+  }
+
+  func testPositiveReadbackCannotOutliveAnInFlightRelease() async throws {
+    for releaseFails in [false, true] {
+      let fixture = Fixture()
+      let backend = DelayedReadbackBackend()
+      let controller = DeskModeController(
+        directController: DirectSafetyLeaseController(
+          leaseBackend: fixture.lease, ownerUID: 501, clock: fixture.clock),
+        assertionBackend: backend, clock: fixture.clock)
+      _ = try await controller.start(
+        allowClosedLid: false, hardCap: .seconds(60), device: fixture.device())
+      await backend.blockNextReadback()
+      let reading = Task { await controller.status() }
+      await backend.waitUntilReadbackIsBlocked()
+      await backend.blockNextRelease(failing: releaseFails)
+      let stopping = Task { await controller.stop() }
+      await backend.waitUntilReleaseIsBlocked()
+
+      // On success, the backend has already removed the assertion, but the
+      // controller has not received the release response. Deliver the older read.
+      await backend.finishReadback()
+      let lateRead = await reading.value
+      XCTAssertEqual(lateRead.trip.phase, .releasingLease)
+      XCTAssertEqual(lateRead.verdict, .releasing(.userRequested))
+      let concurrentResults = [
+        await controller.status(),
+        await controller.stop(),
+        await controller.observe(device: fixture.device(thermal: .critical)),
+        await controller.retryPendingRelease(),
+        await controller.reconcileRecovery(),
+      ]
+      for result in concurrentResults {
+        XCTAssertEqual(result.trip.phase, .releasingLease)
+        XCTAssertEqual(result.verdict, .releasing(.userRequested))
+      }
+      let releaseAttempts = await backend.releaseAttempts
+      XCTAssertEqual(releaseAttempts, 1)
+      do {
+        _ = try await controller.start(
+          allowClosedLid: false, hardCap: .seconds(60), device: fixture.device())
+        XCTFail("an in-flight release must block replacement")
+      } catch {
+        XCTAssertEqual(error as? DeskModeError, .sessionAlreadyRunning)
+      }
+      await backend.finishRelease()
+      let released = await stopping.value
+      XCTAssertEqual(released.trip.phase, releaseFails ? .recoveryPending : .ended)
+      let recovered = await controller.retryPendingRelease()
+      XCTAssertEqual(recovered.trip.phase, .ended)
+      XCTAssertEqual(recovered.trip.stopReason, .userRequested)
+      let finalAttempts = await backend.releaseAttempts
+      XCTAssertEqual(finalAttempts, releaseFails ? 2 : 1)
+    }
+  }
+
+  func testInFlightReleaseCannotPublishAnOldProtectedReadToWireOrCache() async throws {
+    let fixture = Fixture()
+    let backend = DelayedReadbackBackend()
+    let cache = DisplayRuntimeCache()
+    let runtime = SupervisorRuntime(
+      backend: fixture.lease,
+      sampler: DisplayRuntimeSampler(device: fixture.device(), clock: fixture.clock),
+      statusCache: cache, powerAssertionBackend: backend, ownerUID: 501,
+      clock: fixture.clock, automaticMonitoring: false)
+    let started = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(60))
+    XCTAssertEqual(started.verdict, .protected)
+    await backend.blockNextReadback()
+    let reading = Task { await runtime.currentStatus() }
+    await backend.waitUntilReadbackIsBlocked()
+    await backend.blockNextRelease()
+    let stopping = Task { try await runtime.disableDesk() }
+    await backend.waitUntilReleaseIsBlocked()
+    await backend.finishReadback()
+    let lateRead = await reading.value
+    let cached = try await cache.load()
+    XCTAssertEqual(lateRead.phase, .releasingLease)
+    XCTAssertEqual(lateRead.verdict, .releasing)
+    XCTAssertEqual(lateRead.sessionID, started.sessionID)
+    XCTAssertFalse(lateRead.closedLidAllowed)
+    XCTAssertEqual(cached?.phase, .releasingLease)
+    XCTAssertEqual(cached?.verdict, .releasing)
+    await backend.finishRelease()
+    let stopped = try await stopping.value
+    XCTAssertEqual(stopped.phase, .ended)
+    XCTAssertEqual(stopped.mode, .none)
+    XCTAssertEqual(stopped.verdict, .inactive)
+    let attempts = await backend.releaseAttempts
+    XCTAssertEqual(attempts, 1)
   }
 
   func testClosedLidSessionKeepsUsingOnlyThePrivilegedLeasePath() async throws {
@@ -458,8 +578,14 @@ private actor DelayedReadbackBackend: UserPowerAssertionBackend {
   private var shouldBlock = false
   private var blockedReadback: CheckedContinuation<Void, Never>?
   private var blockedObserver: CheckedContinuation<Void, Never>?
+  private var shouldBlockRelease = false
+  private var nextReleaseFails = false
+  private var blockedRelease: CheckedContinuation<Void, Never>?
+  private var releaseObserver: CheckedContinuation<Void, Never>?
+  private(set) var releaseAttempts = 0
 
   func acquire(reason: String) async throws -> UserPowerAssertionToken {
+    guard token == nil else { throw UserPowerAssertionError.alreadyActive }
     let acquired = UserPowerAssertionToken(rawValue: nextID)
     nextID += 1
     token = acquired
@@ -482,7 +608,19 @@ private actor DelayedReadbackBackend: UserPowerAssertionBackend {
 
   func release(_ token: UserPowerAssertionToken) async throws {
     guard self.token == token else { throw UserPowerAssertionError.invalidToken }
-    self.token = nil
+    releaseAttempts += 1
+    let fails = nextReleaseFails
+    nextReleaseFails = false
+    if !fails { self.token = nil }
+    if shouldBlockRelease {
+      shouldBlockRelease = false
+      await withCheckedContinuation { continuation in
+        blockedRelease = continuation
+        releaseObserver?.resume()
+        releaseObserver = nil
+      }
+    }
+    if fails { throw UserPowerAssertionError.systemFailure(-1) }
   }
 
   func blockNextReadback() { shouldBlock = true }
@@ -497,6 +635,44 @@ private actor DelayedReadbackBackend: UserPowerAssertionBackend {
     blockedReadback?.resume()
     blockedReadback = nil
   }
+
+  func blockNextRelease(failing: Bool = false) {
+    shouldBlockRelease = true
+    nextReleaseFails = failing
+  }
+
+  func waitUntilReleaseIsBlocked() async {
+    if blockedRelease != nil { return }
+    await withCheckedContinuation { releaseObserver = $0 }
+  }
+
+  func finishRelease() {
+    blockedRelease?.resume()
+    blockedRelease = nil
+  }
+}
+
+private struct DisplayRuntimeSampler: SupervisorEnvironmentSampling {
+  let device: DeviceSafetySnapshot
+  let clock: DisplayTestClock
+
+  func sample(
+    commuteTarget: CommuteNetworkTarget?
+  ) async -> (network: NetworkSnapshot, device: DeviceSafetySnapshot) {
+    (
+      NetworkSnapshot(
+        ssid: nil, interfaceName: "en0", routeReachable: true,
+        internetReachability: .confirmed, capturedAt: clock.now()),
+      device
+    )
+  }
+}
+
+private actor DisplayRuntimeCache: SupervisorStatusCaching {
+  private var status: SupervisorStatusWire?
+
+  func save(_ status: SupervisorStatusWire) async throws { self.status = status }
+  func load() async throws -> SupervisorStatusWire? { status }
 }
 
 private final class DisplayTestClock: @unchecked Sendable, MonotonicTimeSource {
