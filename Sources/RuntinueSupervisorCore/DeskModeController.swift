@@ -7,6 +7,7 @@ public enum DeskModeError: Error, Equatable, Sendable {
   case lidMustBeOpen
   case unsafe(String)
   case assertionFailure(String)
+  case protectionNotConfirmed
 }
 
 public actor DeskModeController {
@@ -89,7 +90,11 @@ public actor DeskModeController {
     latestDevice = device
     latestSafetyVerdict = verdict
     safetyTracker = tracker
-    return await makeAssertionStatus()
+    let status = await makeAssertionStatus()
+    guard status.trip.phase == .active, case .protected = status.verdict else {
+      throw DeskModeError.protectionNotConfirmed
+    }
+    return status
   }
 
   @discardableResult

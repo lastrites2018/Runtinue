@@ -533,15 +533,36 @@ public actor SupervisorRuntime {
       throw SupervisorRuntimeError.invalidDeskConfiguration
     }
     let snapshot = await sampleEnvironment(commuteTarget: nil)
-    let status = try await deskController.start(
-      allowClosedLid: allowClosedLid,
-      hardCap: hardCap,
-      device: snapshot.device
-    )
-    deskConfiguration = DeskModeConfiguration(
+    let configuration = DeskModeConfiguration(
       allowClosedLid: allowClosedLid,
       hardCap: hardCap
     )
+    let status: SupervisorStatus
+    do {
+      status = try await deskController.start(
+        allowClosedLid: allowClosedLid,
+        hardCap: hardCap,
+        device: snapshot.device
+      )
+    } catch DeskModeError.protectionNotConfirmed {
+      // The command failed, but an assertion whose release failed still belongs
+      // to this mode until recovery confirms that normal sleep is restored.
+      deskConfiguration = configuration
+      deskDisablePending = false
+      let failedStatus = await deskController.status()
+      settleDeskSession(failedStatus)
+      if deskConfiguration != nil, automaticMonitoring {
+        startMonitorIfNeeded()
+      }
+      let wire = makeWireStatus(
+        failedStatus,
+        mode: deskConfiguration == nil ? .none : .desk,
+        closedLidAllowed: allowClosedLid
+      )
+      _ = await persist(wire)
+      throw DeskModeError.protectionNotConfirmed
+    }
+    deskConfiguration = configuration
     deskDisablePending = false
     settleDeskSession(status)
     if deskConfiguration != nil, automaticMonitoring {
