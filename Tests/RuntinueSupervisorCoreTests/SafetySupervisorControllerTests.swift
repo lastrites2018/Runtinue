@@ -520,7 +520,7 @@ private actor FakeUserPowerAssertionBackend: UserPowerAssertionBackend {
   private var releaseCount = 0
   private var active: UserPowerAssertionToken?
 
-  func acquire(reason: String) async throws -> UserPowerAssertionToken {
+  func acquire(reason: String, deadline: MonotonicInstant) async throws -> UserPowerAssertionToken {
     acquireCount += 1
     let token = UserPowerAssertionToken(rawValue: UInt32(acquireCount))
     active = token
@@ -561,7 +561,7 @@ private actor FlakyUserPowerAssertionBackend: UserPowerAssertionBackend {
     self.remainingReleaseFailures = releaseFailures
   }
 
-  func acquire(reason: String) async throws -> UserPowerAssertionToken {
+  func acquire(reason: String, deadline: MonotonicInstant) async throws -> UserPowerAssertionToken {
     let token = UserPowerAssertionToken(rawValue: 1)
     active = token
     return token

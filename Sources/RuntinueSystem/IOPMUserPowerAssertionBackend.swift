@@ -4,15 +4,13 @@ import RuntinueCore
 
 // Keep the synchronous IOKit boundary replaceable in tests without changing system power state.
 struct IOPMAssertionOperations: Sendable {
-  let create: @Sendable (
-    CFString, IOPMAssertionLevel, CFString, UnsafeMutablePointer<IOPMAssertionID>
-  ) -> IOReturn
+  let create: @Sendable (CFDictionary, UnsafeMutablePointer<IOPMAssertionID>) -> IOReturn
   let copyProperties: @Sendable (IOPMAssertionID) -> CFDictionary?
   let release: @Sendable (IOPMAssertionID) -> IOReturn
 
   static let system = IOPMAssertionOperations(
-    create: { type, level, reason, assertionID in
-      IOPMAssertionCreateWithName(type, level, reason, assertionID)
+    create: { properties, assertionID in
+      IOPMAssertionCreateWithProperties(properties, assertionID)
     },
     copyProperties: { assertionID in
       IOPMAssertionCopyProperties(assertionID)?.takeRetainedValue()
@@ -24,29 +22,50 @@ struct IOPMAssertionOperations: Sendable {
 /// Process-owned display and system idle-sleep prevention for open-lid timed sessions.
 public actor IOPMUserPowerAssertionBackend: UserPowerAssertionBackend {
   private let operations: IOPMAssertionOperations
+  private let clock: any MonotonicTimeSource
   private var activeAssertion: IOPMAssertionID?
 
-  public init() {
+  public init(clock: any MonotonicTimeSource = SystemContinuousClock()) {
     operations = .system
+    self.clock = clock
   }
 
-  init(operations: IOPMAssertionOperations) {
+  init(operations: IOPMAssertionOperations, clock: any MonotonicTimeSource) {
     self.operations = operations
+    self.clock = clock
   }
 
-  public func acquire(reason: String) async throws -> UserPowerAssertionToken {
+  public func acquire(
+    reason: String, deadline: MonotonicInstant
+  ) async throws -> UserPowerAssertionToken {
     guard activeAssertion == nil else {
       throw UserPowerAssertionError.alreadyActive
     }
+    // Compute the remaining interval here, after waiting for this actor, rather
+    // than restarting the caller's duration when the request finally arrives.
+    guard let remaining = deadline.durationSince(clock.now()),
+      remaining > .zero, remaining <= CommuteTripRequest.maximumHardCap
+    else {
+      throw UserPowerAssertionError.invalidDeadline
+    }
+    let parts = remaining.components
+    // Power management schedules timeouts in whole seconds. Round up to avoid
+    // turning a positive subsecond remainder into the API's zero/no-timeout value.
+    let timeout = ceil(Double(parts.seconds) + Double(parts.attoseconds) / 1e18)
+    guard timeout.isFinite, timeout > 0 else {
+      throw UserPowerAssertionError.invalidDeadline
+    }
+    let properties: [String: Any] = [
+      kIOPMAssertionTypeKey as String: kIOPMAssertionTypePreventUserIdleDisplaySleep,
+      kIOPMAssertionLevelKey as String: NSNumber(value: kIOPMAssertionLevelOn),
+      kIOPMAssertionNameKey as String: reason,
+      kIOPMAssertionTimeoutKey as String: NSNumber(value: timeout),
+      kIOPMAssertionTimeoutActionKey as String: kIOPMAssertionTimeoutActionTurnOff,
+    ]
     var assertionID = IOPMAssertionID(0)
-    // Display idle-sleep prevention also prevents system idle sleep. It does not unlock
-    // the screen, override a manual sleep request, or enable closed-lid operation.
-    let result = operations.create(
-      kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
-      IOPMAssertionLevel(kIOPMAssertionLevelOn),
-      reason as CFString,
-      &assertionID
-    )
+    // Register the effect and its timeout together. TurnOff leaves the token
+    // owned so the existing release/recovery path can clean it up after expiry.
+    let result = operations.create(properties as CFDictionary, &assertionID)
     guard result == kIOReturnSuccess else {
       throw UserPowerAssertionError.systemFailure(result)
     }
