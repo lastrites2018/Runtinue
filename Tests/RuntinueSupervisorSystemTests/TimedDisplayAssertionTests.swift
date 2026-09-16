@@ -562,7 +562,7 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(ended.verdict, .inactive)
     XCTAssertEqual(ended.stopReason, .hardDeadlineReached)
     XCTAssertEqual(cached?.verdict, .inactive)
-    XCTAssertEqual(cached?.mode, .none)
+    XCTAssertEqual(cached?.mode, WireSessionMode.none)
     _ = await runtime.monitorOnce()
     XCTAssertEqual(fixture.calls.snapshot().creates.count, 1)
     XCTAssertEqual(fixture.calls.snapshot().releases, [101])
