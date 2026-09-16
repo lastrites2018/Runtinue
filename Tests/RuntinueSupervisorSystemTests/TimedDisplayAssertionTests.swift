@@ -164,7 +164,7 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(fixture.calls.snapshot().releases, [token.rawValue])
   }
 
-  func testCreationSuccessWithUnconfirmedReadbackImmediatelyReleasesOrRecovers() async throws {
+  func testCreationSuccessWithUnconfirmedReadbackRejectsStartAndReleasesOrRecovers() async throws {
     let unconfirmed: [RecordingIOPMCalls.Readback] = [
       .unavailable, .off, .wrongType, .missingType, .missingLevel,
     ]
@@ -172,9 +172,19 @@ final class TimedDisplayAssertionTests: XCTestCase {
       for releaseFails in [false, true] {
         let fixture = Fixture(releaseResults: releaseFails ? [kIOReturnError] : [])
         fixture.calls.setReadback(readback)
-        let started = try await fixture.controller.start(
-          allowClosedLid: false, hardCap: CommuteTripRequest.maximumHardCap,
-          device: fixture.device())
+        do {
+          _ = try await fixture.controller.start(
+            allowClosedLid: false, hardCap: CommuteTripRequest.maximumHardCap,
+            device: fixture.device())
+          XCTFail("an unconfirmed assertion must reject the start request")
+        } catch let error as DeskModeError {
+          XCTAssertEqual(error, .protectionNotConfirmed)
+          // The controller must keep any remaining release responsibility after
+          // rejecting activation.
+        } catch {
+          XCTFail("unexpected start error: \(error)")
+        }
+        let started = await fixture.controller.status()
         XCTAssertEqual(started.trip.phase, releaseFails ? .recoveryPending : .ended)
         XCTAssertEqual(fixture.calls.snapshot().readbacks, [101])
         XCTAssertEqual(fixture.calls.snapshot().releases, [101])
@@ -296,8 +306,13 @@ final class TimedDisplayAssertionTests: XCTestCase {
       _ = await controller.stop()
       if startsReplacement {
         await backend.setConfirmed(false)
-        _ = try await controller.start(
-          allowClosedLid: false, hardCap: .seconds(60), device: fixture.device())
+        do {
+          _ = try await controller.start(
+            allowClosedLid: false, hardCap: .seconds(60), device: fixture.device())
+          XCTFail("an unconfirmed replacement must reject the start request")
+        } catch let error as DeskModeError {
+          XCTAssertEqual(error, .protectionNotConfirmed)
+        }
       }
       await backend.finishReadback()
       let result = await reading.value

@@ -801,7 +801,9 @@ final class SupervisorRuntimeTests: XCTestCase {
     }
   }
 
-  func testUnconfirmedDeskStartRetainsOnlyUnreleasedRecoveryResponsibility() async throws {
+  func testUnconfirmedDeskStartIsRejectedAndRetainsOnlyUnreleasedRecoveryResponsibility()
+    async throws
+  {
     for releaseFails in [false, true] {
       let clock = RuntimeManualClock()
       let assertion = RuntimeFakePowerAssertionBackend()
@@ -813,7 +815,20 @@ final class SupervisorRuntimeTests: XCTestCase {
       )
       await assertion.setReadbackConfirmed(false)
       await assertion.setReleaseFailure(releaseFails)
-      let result = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(86_400))
+      do {
+        _ = try await runtime.enableDesk(
+          allowClosedLid: false,
+          hardCap: .seconds(86_400)
+        )
+        XCTFail("an unconfirmed assertion must reject the enable request")
+      } catch let error as DeskModeError {
+        XCTAssertEqual(error, .protectionNotConfirmed)
+        // The failed command still has to publish and recover any owned assertion.
+      } catch {
+        XCTFail("unexpected enable error: \(error)")
+      }
+      let published = try await cache.load()
+      let result = try XCTUnwrap(published)
       XCTAssertEqual(result.phase, releaseFails ? .recoveryPending : .ended)
       XCTAssertEqual(result.verdict, releaseFails ? .recoveryPending : .inactive)
       XCTAssertEqual(result.mode, releaseFails ? .desk : .none)
