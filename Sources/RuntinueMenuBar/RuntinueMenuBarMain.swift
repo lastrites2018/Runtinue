@@ -45,12 +45,12 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     keyEquivalent: ""
   )
   private let startDeskItem = NSMenuItem(
-    title: L("시간을 정해 유지", "Keep awake for a set time"),
+    title: TimedSessionMenu.title,
     action: nil,
     keyEquivalent: ""
   )
   private let stopItem = NSMenuItem(
-    title: L("실행 유지 중단", "Stop keeping awake"), action: nil, keyEquivalent: "")
+    title: L("현재 모드 중단", "Stop current mode"), action: nil, keyEquivalent: "")
   private let diagnosticsItem = NSMenuItem(
     title: L("진단 정보 보기…", "Diagnostics…"),
     action: nil,
@@ -95,8 +95,8 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   private func configureMenu() {
     startTripItem.title = L("이동 중 실행 유지…", "Keep awake on the go…")
     startAdaptiveItem.title = L("작업 중 자동 유지…", "Keep awake during tasks…")
-    startDeskItem.title = L("시간을 정해 유지", "Keep awake for a set time")
-    stopItem.title = L("실행 유지 중단", "Stop keeping awake")
+    startDeskItem.title = TimedSessionMenu.title
+    stopItem.title = L("현재 모드 중단", "Stop current mode")
     diagnosticsItem.title = L("진단 정보…", "Diagnostics…")
     historyItem.title = L("최근 기록…", "Recent history…")
     eventsItem.title = L("이동 모드 기록 요약…", "Travel activity summary…")
@@ -143,14 +143,14 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
     aboutItem.target = self
     aboutItem.identifier = NSUserInterfaceItemIdentifier("runtinue.about")
     let quitItem = NSMenuItem(
-      title: L("메뉴바만 종료", "Quit menu bar only"),
+      title: L("메뉴 막대 앱만 종료", "Quit menu bar app only"),
       action: #selector(quit),
       keyEquivalent: "q"
     )
     quitItem.target = self
     quitItem.toolTip = L(
-      "실행 유지도 끝내려면 먼저 실행 유지 중단을 선택하세요.",
-      "To stop keeping awake too, choose Stop keeping awake first.")
+      "실행 중인 모드도 끝내려면 먼저 ‘현재 모드 중단’을 선택하세요.",
+      "To stop the active mode too, choose Stop current mode first.")
 
     let menu = NSMenu()
     menu.autoenablesItems = false
@@ -387,10 +387,10 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
   @objc private func startDesk() {
     let form = DeskConfigurationView()
     let alert = configurationAlert(
-      title: L("시간을 정해 유지", "Keep awake for a set time"),
+      title: TimedSessionMenu.title,
       message: L(
-        "다운로드나 긴 작업이 끝날 때까지 Mac이 잠들지 않도록 시간을 정합니다.",
-        "Set how long your Mac should stay awake for a download or a long-running task."),
+        "다운로드나 오래 걸리는 작업 중에 Mac이 잠자기 상태로 전환되지 않도록 시간을 설정합니다.",
+        "Set how long your Mac should stay awake during a download or long-running task."),
       accessoryView: form,
       validate: { _ = try form.input.validatedSettings() }
     )
@@ -748,6 +748,14 @@ private final class MenuBarDelegate: NSObject, NSApplicationDelegate {
 
 @MainActor
 enum TimedSessionMenu {
+  static var title: String {
+    L("일정 시간 잠자기 방지", "Keep Mac awake for a set time")
+  }
+
+  static var customSettingsTitle: String {
+    L("시간과 덮개 설정…", "Time and lid settings…")
+  }
+
   static func make(
     target: AnyObject,
     presetAction: Selector,
@@ -757,7 +765,7 @@ enum TimedSessionMenu {
     menu.autoenablesItems = false
     let groups: [(title: String, values: [Int], minutesPerUnit: Int)] = [
       (L("분", "Minutes"), [5, 10, 15, 20, 30, 45], 1),
-      (L("시간", "Hours"), [1, 2, 3, 4, 6, 8], 60),
+      (L("시간", "Hours"), [1, 2, 3, 4, 6, 8, 10, 12, 24], 60),
     ]
     for group in groups {
       let submenu = NSMenu(title: group.title)
@@ -782,7 +790,7 @@ enum TimedSessionMenu {
     }
     menu.addItem(.separator())
     let custom = NSMenuItem(
-      title: L("직접 입력…", "Custom…"), action: customAction, keyEquivalent: "")
+      title: customSettingsTitle, action: customAction, keyEquivalent: "")
     custom.target = target
     custom.identifier = NSUserInterfaceItemIdentifier("runtinue.desk.custom")
     menu.addItem(custom)

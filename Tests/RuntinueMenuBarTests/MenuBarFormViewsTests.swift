@@ -127,6 +127,67 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
     XCTAssertEqual(settings.hardCapSeconds, 3_600)
   }
 
+  func testDeskFormQualifiesDisplayProtectionAndReleaseInBothLanguages() throws {
+    _ = NSApplication.shared
+    let expected = [
+      (
+        InterfaceLanguage.ko,
+        "지속 시간(분)",
+        "덮개 닫기 허용",
+        "덮개 닫기를 허용하지 않을 때만 디스플레이 자동 꺼짐 방지를 요청합니다. 시간 만료 또는 배터리·macOS 열 압력의 안전 기준 위반 시 잠자기 방지 해제를 시도합니다. 해제가 확인될 때까지 복구 중으로 표시합니다."
+      ),
+      (
+        InterfaceLanguage.en,
+        "Duration (min)",
+        "Allow closed-lid operation",
+        "Display idle-sleep prevention is requested only when closed-lid operation is off. At expiry or a battery or macOS thermal safety limit, release is attempted. Recovery stays pending until release is confirmed."
+      ),
+    ]
+    for (language, durationLabel, closedLidLabel, note) in expected {
+      try InterfaceLanguage.$override.withValue(language) {
+        let form = DeskConfigurationView()
+        let duration: NSTextField = try control("runtinue.desk.duration", in: form)
+        let closedLid: NSButton = try control("runtinue.desk.closedLid", in: form)
+        XCTAssertEqual(duration.accessibilityLabel(), durationLabel)
+        XCTAssertEqual(closedLid.title, closedLidLabel)
+        XCTAssertEqual(closedLid.accessibilityLabel(), closedLidLabel)
+        for state in [NSControl.StateValue.off, .on] {
+          closedLid.state = state
+          XCTAssertEqual(try form.input.validatedSettings().allowClosedLid, state == .on)
+          XCTAssertTrue(
+            descendants(form).compactMap { ($0 as? NSTextField)?.stringValue }.contains(note))
+        }
+      }
+    }
+  }
+
+  func testDeskCheckboxAndSafetyNoteFitTheirActualLayoutInBothLanguages() throws {
+    _ = NSApplication.shared
+    for language in [InterfaceLanguage.ko, .en] {
+      try InterfaceLanguage.$override.withValue(language) {
+        let form = DeskConfigurationView()
+        let window = NSWindow(
+          contentRect: form.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = form
+        defer { window.close() }
+        form.layoutSubtreeIfNeeded()
+
+        let checkbox: NSButton = try control("runtinue.desk.closedLid", in: form)
+        XCTAssertGreaterThanOrEqual(
+          checkbox.bounds.width, checkbox.intrinsicContentSize.width,
+          "the visible title and checkbox indicator must fit, not just the accessibility label")
+        let note = try XCTUnwrap(
+          descendants(form).compactMap { $0 as? NSTextField }
+            .first { $0.stringValue.contains("macOS") })
+        let noteFrame = form.convert(note.bounds, from: note)
+        XCTAssertGreaterThanOrEqual(noteFrame.minY, 0)
+        XCTAssertLessThanOrEqual(noteFrame.maxY, form.bounds.height)
+        XCTAssertGreaterThanOrEqual(note.bounds.height, note.fittingSize.height)
+      }
+    }
+  }
+
   private func control<T: NSView>(_ identifier: String, in view: NSView) throws -> T {
     if view.accessibilityIdentifier() == identifier, let control = view as? T {
       return control
@@ -136,6 +197,10 @@ final class MenuBarFormViewsTests: KoreanInterfaceTestCase {
     }
     throw NSError(domain: "MissingFormControl", code: 1)
   }
+
+  private func descendants(_ view: NSView) -> [NSView] {
+    view.subviews.flatMap { [$0] + descendants($0) }
+  }
 }
 
 @MainActor
@@ -143,14 +208,18 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
   func testPresetsDispatchTheSelectedDurationWithoutCustomInput() throws {
     let target = TimedMenuActionTarget()
     let menu = makeMenu(target: target)
+    XCTAssertEqual(TimedSessionMenu.title, "일정 시간 잠자기 방지")
     XCTAssertEqual(menu.numberOfItems, 4)
     XCTAssertEqual(menu.item(at: 0)?.title, "분")
     XCTAssertEqual(menu.item(at: 1)?.title, "시간")
     XCTAssertTrue(try XCTUnwrap(menu.item(at: 2)).isSeparatorItem)
-    XCTAssertEqual(menu.item(at: 3)?.title, "직접 입력…")
+    XCTAssertEqual(menu.item(at: 3)?.title, "시간과 덮개 설정…")
     TimedSessionMenu.setEnabled(true, in: menu)
 
-    let expectedMinutes = [[5, 10, 15, 20, 30, 45], [60, 120, 180, 240, 360, 480]]
+    let expectedMinutes = [
+      [5, 10, 15, 20, 30, 45],
+      [60, 120, 180, 240, 360, 480, 600, 720, 1_440],
+    ]
     var expectedInputs: [DeskFormInput] = []
     for (groupIndex, durations) in expectedMinutes.enumerated() {
       let submenu = try XCTUnwrap(menu.item(at: groupIndex)?.submenu)
@@ -207,23 +276,38 @@ final class TimedSessionMenuTests: KoreanInterfaceTestCase {
     }
   }
 
+  func testUnconfirmedTimedStatusDoesNotPromiseDisplayProtection() {
+    for language in [InterfaceLanguage.ko, .en] {
+      InterfaceLanguage.$override.withValue(language) {
+        let unconfirmed = MenuBarPresentation(
+          status: status(phase: .active, mode: .desk, verdict: .unknown))
+        XCTAssertEqual(unconfirmed.tone, .unknown)
+        XCTAssertEqual(unconfirmed.statusIndicator, "?")
+        XCTAssertFalse(unconfirmed.detail.contains("디스플레이가 꺼지지 않음"))
+        XCTAssertFalse(unconfirmed.detail.contains("Display stays on while idle"))
+      }
+    }
+  }
+
   func testRebuiltMenuUsesEnglishLabelsAndTheSameDurations() throws {
     UserDefaults.standard.set("en", forKey: InterfaceLanguage.preferenceKey)
     let target = TimedMenuActionTarget()
     let menu = makeMenu(target: target)
+    XCTAssertEqual(TimedSessionMenu.title, "Keep Mac awake for a set time")
     XCTAssertEqual(menu.item(at: 0)?.title, "Minutes")
     XCTAssertEqual(menu.item(at: 1)?.title, "Hours")
-    XCTAssertEqual(menu.item(at: 3)?.title, "Custom…")
+    XCTAssertEqual(menu.item(at: 3)?.title, "Time and lid settings…")
     let minutes = try XCTUnwrap(menu.item(at: 0)?.submenu)
     let hours = try XCTUnwrap(menu.item(at: 1)?.submenu)
     XCTAssertEqual(minutes.items.map(\.title), [
       "5 minutes", "10 minutes", "15 minutes", "20 minutes", "30 minutes", "45 minutes",
     ])
     XCTAssertEqual(hours.items.map(\.title), [
-      "1 hour", "2 hours", "3 hours", "4 hours", "6 hours", "8 hours",
+      "1 hour", "2 hours", "3 hours", "4 hours", "6 hours", "8 hours", "10 hours", "12 hours",
+      "24 hours",
     ])
     XCTAssertEqual(
-      (hours.item(at: 5)?.representedObject as? DeskFormInput)?.maximumProtectionMinutes, "480")
+      (hours.item(at: 8)?.representedObject as? DeskFormInput)?.maximumProtectionMinutes, "1440")
   }
 
   private func makeMenu(target: TimedMenuActionTarget) -> NSMenu {

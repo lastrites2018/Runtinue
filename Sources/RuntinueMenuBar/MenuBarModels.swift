@@ -128,7 +128,7 @@ struct DeskFormInput: Equatable, Sendable {
     DeskSettings(
       hardCapSeconds: try parseMinutes(
         maximumProtectionMinutes,
-        field: L("실행 유지 한도", "Maximum time"),
+        field: L("지속 시간", "Duration"),
         maximum: Self.maximumProtectionMinutes
       ),
       allowClosedLid: allowClosedLid
@@ -336,8 +336,8 @@ struct MenuBarPresentation: Equatable, Sendable {
       headline = L("요청 처리 중", "Applying request")
       guidance = L("덮개를 아직 닫지 마세요.", "Keep the lid open for now.")
       detail = L(
-        "백그라운드 서비스에서 실행 유지 상태를 확인하고 있습니다.",
-        "Waiting for the background service to confirm keep-awake status.")
+        "백그라운드 서비스에서 현재 모드의 상태를 확인하고 있습니다.",
+        "Waiting for the background service to confirm the current mode.")
       tone = .progress
       safetyChecklist = nil
       return
@@ -363,9 +363,9 @@ struct MenuBarPresentation: Equatable, Sendable {
       statusIndicator = "✓"
       if compactTimed {
         summary = L(
-          "시간 지정 모드 실행 유지 중, 덮개 열기 필요",
-          "Timed: keeping awake; leave lid open")
-        headline = L("실행 유지 중", "Keeping awake")
+          "Mac이 잠자지 않도록 하는 중, 덮개 열기 필요",
+          "Keeping Mac awake; keep lid open")
+        headline = L("Mac이 잠자지 않도록 하는 중", "Keeping Mac awake")
         guidance = Self.timedRemaining(status.remainingSeconds)
         tone = .progress
       } else if status.closedLidAllowed {
@@ -423,17 +423,19 @@ struct MenuBarPresentation: Equatable, Sendable {
       statusIndicator = ""
       summary =
         status.mode == .adaptive
-        ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 유지 꺼짐", "Not keeping awake")
+        ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 중인 모드 없음", "No active mode")
       headline =
         status.mode == .adaptive
-        ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 유지 꺼짐", "Not keeping awake")
-      guidance = L("아래 메뉴에서 실행 유지 방식을 선택하세요.", "Choose how to keep awake from the menu below.")
+        ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 중인 모드 없음", "No active mode")
+      guidance = L("아래 메뉴에서 사용할 모드를 선택하세요.", "Choose a mode from the menu below.")
       tone = .neutral
     }
 
     var statusFields: [String] = []
     if compactTimed {
-      statusFields.append(L("덮개를 열고 사용", "Use with the lid open"))
+      statusFields.append(
+        L("비활성 상태에서도 디스플레이가 꺼지지 않음", "Display stays on while idle"))
+      statusFields.append(L("덮개 열기 필요", "Keep lid open"))
     } else {
       if let remaining = status.remainingSeconds {
         statusFields.append(

@@ -527,6 +527,13 @@ private actor FakeUserPowerAssertionBackend: UserPowerAssertionBackend {
     return token
   }
 
+  func isActive(_ token: UserPowerAssertionToken) async throws -> Bool {
+    guard active == token else {
+      throw UserPowerAssertionError.invalidToken
+    }
+    return true
+  }
+
   func release(_ token: UserPowerAssertionToken) async throws {
     guard active == token else {
       throw UserPowerAssertionError.invalidToken
@@ -558,6 +565,13 @@ private actor FlakyUserPowerAssertionBackend: UserPowerAssertionBackend {
     let token = UserPowerAssertionToken(rawValue: 1)
     active = token
     return token
+  }
+
+  func isActive(_ token: UserPowerAssertionToken) async throws -> Bool {
+    guard active == token else {
+      throw UserPowerAssertionError.invalidToken
+    }
+    return true
   }
 
   func release(_ token: UserPowerAssertionToken) async throws {

@@ -763,6 +763,106 @@ final class SupervisorRuntimeTests: XCTestCase {
     XCTAssertEqual(assertionSnapshot.releaseCount, 1)
   }
 
+  func testUnconfirmedDeskAssertionStopsAndClearsTheWireAndCacheImmediately() async throws {
+    for useMonitor in [false, true] {
+      let clock = RuntimeManualClock()
+      let assertion = RuntimeFakePowerAssertionBackend()
+      let cache = RuntimeFakeCache()
+      let runtime = makeRuntime(
+        backend: RuntimeFakeBackend(clock: clock),
+        sampler: RuntimeFakeSampler(snapshots: [runtimeSnapshot(ssid: "Office", clock: clock)]),
+        cache: cache,
+        powerAssertionBackend: assertion,
+        clock: clock
+      )
+      let started = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(86_400))
+      XCTAssertEqual(started.verdict, .protected)
+
+      await assertion.setReadbackConfirmed(false)
+      let stopped = useMonitor ? await runtime.monitorOnce() : await runtime.currentStatus()
+      let cached = try await cache.load()
+      XCTAssertEqual(stopped.mode, .none)
+      XCTAssertEqual(stopped.phase, .ended)
+      XCTAssertEqual(stopped.sessionID, started.sessionID)
+      XCTAssertEqual(stopped.verdict, .inactive)
+      XCTAssertEqual(stopped.stopReason, .leaseRejected)
+      XCTAssertFalse(stopped.closedLidAllowed)
+      XCTAssertEqual(cached?.phase, .ended)
+      XCTAssertEqual(cached?.verdict, .inactive)
+      let released = await assertion.snapshot()
+      XCTAssertFalse(released.isActive)
+      XCTAssertEqual(released.releaseCount, 1)
+
+      await assertion.setReadbackConfirmed(true)
+      let restarted = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(60))
+      XCTAssertNotEqual(restarted.sessionID, started.sessionID)
+      XCTAssertEqual(restarted.verdict, .protected)
+      _ = try await runtime.disableDesk()
+    }
+  }
+
+  func testUnconfirmedDeskStartIsRejectedAndRetainsOnlyUnreleasedRecoveryResponsibility()
+    async throws
+  {
+    for releaseFails in [false, true] {
+      let clock = RuntimeManualClock()
+      let assertion = RuntimeFakePowerAssertionBackend()
+      let cache = RuntimeFakeCache()
+      let runtime = makeRuntime(
+        backend: RuntimeFakeBackend(clock: clock),
+        sampler: RuntimeFakeSampler(snapshots: [runtimeSnapshot(ssid: "Office", clock: clock)]),
+        cache: cache, powerAssertionBackend: assertion, clock: clock
+      )
+      await assertion.setReadbackConfirmed(false)
+      await assertion.setReleaseFailure(releaseFails)
+      do {
+        _ = try await runtime.enableDesk(
+          allowClosedLid: false,
+          hardCap: .seconds(86_400)
+        )
+        XCTFail("an unconfirmed assertion must reject the enable request")
+      } catch let error as DeskModeError {
+        XCTAssertEqual(error, .protectionNotConfirmed)
+        // The failed command still has to publish and recover any owned assertion.
+      } catch {
+        XCTFail("unexpected enable error: \(error)")
+      }
+      let published = try await cache.load()
+      let result = try XCTUnwrap(published)
+      XCTAssertEqual(result.phase, releaseFails ? .recoveryPending : .ended)
+      XCTAssertEqual(result.verdict, releaseFails ? .recoveryPending : .inactive)
+      XCTAssertEqual(result.mode, releaseFails ? .desk : .none)
+      XCTAssertFalse(result.closedLidAllowed)
+      let cached = try await cache.load()
+      XCTAssertEqual(cached?.verdict, result.verdict)
+
+      await assertion.setReadbackConfirmed(true)
+      if releaseFails {
+        do {
+          _ = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(60))
+          XCTFail("unreleased recovery must block a new mode")
+        } catch {
+          XCTAssertEqual(error as? SupervisorRuntimeError, .modeConflict)
+        }
+        let pending = await runtime.currentStatus()
+        XCTAssertEqual(pending.verdict, .recoveryPending)
+        let owned = await assertion.snapshot()
+        XCTAssertTrue(owned.isActive)
+        XCTAssertEqual(owned.acquireCount, 1)
+        XCTAssertEqual(owned.releaseCount, 0)
+        await assertion.setReleaseFailure(false)
+        let recovered = await runtime.monitorOnce()
+        XCTAssertEqual(recovered.phase, .ended)
+        XCTAssertEqual(recovered.mode, .none)
+        XCTAssertEqual(recovered.stopReason, .leaseRejected)
+      }
+      let restarted = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(60))
+      XCTAssertEqual(restarted.verdict, .protected)
+      XCTAssertNotEqual(restarted.sessionID, result.sessionID)
+      _ = try await runtime.disableDesk()
+    }
+  }
+
   func testClosedDeskModeUsesLivePrivilegedLeaseTruth() async throws {
     let clock = RuntimeManualClock()
     let backend = RuntimeFakeBackend(clock: clock)
@@ -1186,6 +1286,8 @@ private actor RuntimeFakePowerAssertionBackend: UserPowerAssertionBackend {
   private var acquireCount = 0
   private var releaseCount = 0
   private var active: UserPowerAssertionToken?
+  private var readbackConfirmed = true
+  private var releaseFails = false
 
   func acquire(reason: String) async throws -> UserPowerAssertionToken {
     acquireCount += 1
@@ -1194,9 +1296,27 @@ private actor RuntimeFakePowerAssertionBackend: UserPowerAssertionBackend {
     return token
   }
 
+  func isActive(_ token: UserPowerAssertionToken) async throws -> Bool {
+    guard active == token else {
+      throw UserPowerAssertionError.invalidToken
+    }
+    return readbackConfirmed
+  }
+
+  func setReadbackConfirmed(_ confirmed: Bool) {
+    readbackConfirmed = confirmed
+  }
+
+  func setReleaseFailure(_ fails: Bool) {
+    releaseFails = fails
+  }
+
   func release(_ token: UserPowerAssertionToken) async throws {
     guard active == token else {
       throw UserPowerAssertionError.invalidToken
+    }
+    if releaseFails {
+      throw UserPowerAssertionError.systemFailure(-1)
     }
     active = nil
     releaseCount += 1

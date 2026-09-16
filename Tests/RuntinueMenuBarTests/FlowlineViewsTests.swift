@@ -145,6 +145,29 @@ final class SafetyChecklistViewsTests: KoreanInterfaceTestCase {
     }
   }
 
+  func testTimedHeaderShowsTheFullSleepAndDisplayWording() async throws {
+    try await MainActor.run {
+      let header = ProtectionStatusHeaderView()
+      header.update(MenuBarPresentation(status: protectedTimedStatus()))
+      header.layoutSubtreeIfNeeded()
+
+      let headline = try XCTUnwrap(
+        findView(identifier: "runtinue.header.headline", in: header) as? NSTextField
+      )
+      let detail = try XCTUnwrap(
+        findView(identifier: "runtinue.header.detail", in: header) as? NSTextField
+      )
+      XCTAssertEqual(headline.stringValue, "Mac이 잠자지 않도록 하는 중")
+      XCTAssertLessThanOrEqual(
+        headline.attributedStringValue.size().width,
+        headline.bounds.width + 0.5
+      )
+      XCTAssertEqual(
+        detail.stringValue,
+        "비활성 상태에서도 디스플레이가 꺼지지 않음 | 덮개 열기 필요")
+    }
+  }
+
   func testChecklistRendersWithoutHorizontalClippingAtBothScales() async throws {
     try await MainActor.run {
       let checklist = SafetyChecklistView()
@@ -212,6 +235,23 @@ private func protectedTripStatus(closedLidAllowed: Bool) -> SupervisorStatusWire
     verdict: .protected,
     closedLidAllowed: closedLidAllowed,
     remainingSeconds: 5_400,
+    batteryPercent: 80,
+    thermalLevel: "nominal",
+    lidState: "open",
+    detail: nil,
+    updatedAt: Date(timeIntervalSince1970: 1)
+  )
+}
+
+@MainActor
+private func protectedTimedStatus() -> SupervisorStatusWire {
+  SupervisorStatusWire(
+    phase: .active,
+    mode: .desk,
+    sessionID: UUID(),
+    verdict: .protected,
+    closedLidAllowed: false,
+    remainingSeconds: 2_520,
     batteryPercent: 80,
     thermalLevel: "nominal",
     lidState: "open",

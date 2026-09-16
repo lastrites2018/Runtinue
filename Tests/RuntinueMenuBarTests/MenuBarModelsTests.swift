@@ -275,7 +275,7 @@ final class MenuBarModelsTests: KoreanInterfaceTestCase {
       status: status(verdict: .protected, closedLidAllowed: false, mode: .desk)
     )
 
-    XCTAssertEqual(presentation.summary, "시간 지정 모드 실행 유지 중, 덮개 열기 필요")
+    XCTAssertEqual(presentation.summary, "Mac이 잠자지 않도록 하는 중, 덮개 열기 필요")
   }
 
   func testProtectedTripChecklistOnlyShowsVerifiedProtectionAfterClosedLidReadBack() throws {
