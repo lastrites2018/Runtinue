@@ -21,6 +21,8 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(calls.creates.first?.type, kIOPMAssertionTypePreventUserIdleDisplaySleep as String)
     XCTAssertEqual(calls.creates.first?.level, IOPMAssertionLevel(kIOPMAssertionLevelOn))
     XCTAssertEqual(calls.creates.first?.reason, "Runtinue desk mode")
+    XCTAssertEqual(calls.creates.first?.timeout, 60)
+    XCTAssertEqual(calls.creates.first?.timeoutAction, kIOPMAssertionTimeoutActionTurnOff as String)
     XCTAssertEqual(calls.readbacks, [101])
     XCTAssertTrue(calls.releases.isEmpty)
     let privilegedAcquires = await fixture.lease.acquireCount
@@ -63,6 +65,7 @@ final class TimedDisplayAssertionTests: XCTestCase {
       started.verdict,
       .protected(remaining: CommuteTripRequest.maximumHardCap)
     )
+    XCTAssertEqual(fixture.calls.snapshot().creates.first?.timeout, 86_400)
     _ = await fixture.controller.stop()
   }
 
@@ -129,7 +132,8 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(failed.trip.phase, .recoveryPending)
     XCTAssertEqual(fixture.calls.snapshot().releases, [101])
     do {
-      _ = try await fixture.backend.acquire(reason: "must not replace the pending assertion")
+      _ = try await fixture.backend.acquire(
+        reason: "must not replace the pending assertion", deadline: fixture.clock.now().adding(.seconds(60)))
       XCTFail("pending assertion must block acquisition")
     } catch {
       XCTAssertEqual(error as? UserPowerAssertionError, .alreadyActive)
@@ -147,7 +151,8 @@ final class TimedDisplayAssertionTests: XCTestCase {
 
   func testInvalidTokenCannotReleaseTheDisplayAssertion() async throws {
     let fixture = Fixture()
-    let token = try await fixture.backend.acquire(reason: "token fixture")
+    let token = try await fixture.backend.acquire(
+      reason: "token fixture", deadline: fixture.clock.now().adding(.seconds(60)))
     do {
       try await fixture.backend.release(UserPowerAssertionToken(rawValue: token.rawValue + 1))
       XCTFail("wrong token must not reach IOKit")
@@ -185,7 +190,8 @@ final class TimedDisplayAssertionTests: XCTestCase {
         XCTAssertEqual(fixture.calls.snapshot().releases, [101])
         if releaseFails {
           do {
-            _ = try await fixture.backend.acquire(reason: "unreleased ownership cannot be replaced")
+            _ = try await fixture.backend.acquire(
+              reason: "unreleased ownership cannot be replaced", deadline: fixture.clock.now().adding(.seconds(60)))
             XCTFail("failed release must retain the owned assertion")
           } catch {
             XCTAssertEqual(error as? UserPowerAssertionError, .alreadyActive)
@@ -245,7 +251,8 @@ final class TimedDisplayAssertionTests: XCTestCase {
 
   func testInvalidReadbackTokenDoesNotQueryAnotherAssertion() async throws {
     let fixture = Fixture()
-    let token = try await fixture.backend.acquire(reason: "readback ownership fixture")
+    let token = try await fixture.backend.acquire(
+      reason: "readback ownership fixture", deadline: fixture.clock.now().adding(.seconds(60)))
     do {
       _ = try await fixture.backend.isActive(UserPowerAssertionToken(rawValue: token.rawValue + 1))
       XCTFail("an invalid token must not reach the readback boundary")
@@ -411,6 +418,171 @@ final class TimedDisplayAssertionTests: XCTestCase {
     XCTAssertEqual(attempts, 1)
   }
 
+  func testTimeoutTurnsOffTheEffectWithoutAControllerObservation() async throws {
+    let fixture = Fixture()
+    let started = try await fixture.start()
+    fixture.calls.advancePowerManager(seconds: 59)
+    XCTAssertEqual(fixture.calls.snapshot().effectiveIDs, [101])
+    fixture.calls.advancePowerManager(seconds: 1)
+    // No observe, status, or release call caused this modelled OS expiry.
+    let expired = fixture.calls.snapshot()
+    XCTAssertTrue(expired.effectiveIDs.isEmpty)
+    XCTAssertEqual(expired.retainedIDs, [101])
+    XCTAssertEqual(expired.readbacks, [101])
+    XCTAssertTrue(expired.releases.isEmpty)
+
+    fixture.clock.advance(seconds: 60)
+    let ended = await fixture.controller.status()
+    XCTAssertEqual(ended.trip.sessionID, started.trip.sessionID)
+    XCTAssertEqual(ended.trip.phase, .ended)
+    XCTAssertEqual(ended.trip.stopReason, .hardDeadlineReached)
+    XCTAssertEqual(ended.verdict, .inactive)
+    XCTAssertEqual(fixture.calls.snapshot().releases, [101])
+    XCTAssertTrue(fixture.calls.snapshot().retainedIDs.isEmpty)
+    _ = await fixture.controller.observe(device: fixture.device())
+    _ = await fixture.controller.status()
+    XCTAssertEqual(fixture.calls.snapshot().creates.count, 1)
+  }
+
+  func testExpiredEffectCleanupFailureRemainsOwnedUntilRetry() async throws {
+    let fixture = Fixture(releaseResults: [kIOReturnError, kIOReturnSuccess])
+    _ = try await fixture.start()
+    fixture.calls.advancePowerManager(seconds: 60)
+    fixture.clock.advance(seconds: 60)
+    fixture.calls.setReadback(.unavailable)
+    let pending = await fixture.controller.status()
+    XCTAssertEqual(pending.trip.phase, .recoveryPending)
+    XCTAssertTrue(fixture.calls.snapshot().effectiveIDs.isEmpty)
+    XCTAssertEqual(fixture.calls.snapshot().retainedIDs, [101])
+    do {
+      _ = try await fixture.backend.acquire(
+        reason: "expired but owned", deadline: fixture.clock.now().adding(.seconds(60)))
+      XCTFail("expiry must not abandon the unreleased token")
+    } catch {
+      XCTAssertEqual(error as? UserPowerAssertionError, .alreadyActive)
+    }
+    let recovered = await fixture.controller.retryPendingRelease()
+    XCTAssertEqual(recovered.trip.stopReason, .hardDeadlineReached)
+    XCTAssertEqual(recovered.verdict, .inactive)
+    XCTAssertEqual(fixture.calls.snapshot().releases, [101, 101])
+    XCTAssertEqual(fixture.calls.snapshot().creates.count, 1)
+    XCTAssertTrue(fixture.calls.snapshot().retainedIDs.isEmpty)
+  }
+
+  func testQueuedRequestUsesOnlyTheOriginalDeadlinesRemainingTime() async throws {
+    let fixture = Fixture()
+    let deadline = fixture.clock.now().adding(.seconds(60))
+    fixture.clock.advance(seconds: 15)
+    let token = try await fixture.backend.acquire(reason: "delayed arrival", deadline: deadline)
+    XCTAssertEqual(fixture.calls.snapshot().creates.first?.timeout, 45)
+    fixture.calls.advancePowerManager(seconds: 45)
+    XCTAssertTrue(fixture.calls.snapshot().effectiveIDs.isEmpty)
+    try await fixture.backend.release(token)
+  }
+
+  func testInvalidDeadlinesNeverReachIOKit() async throws {
+    let fixture = Fixture()
+    let deadlines = [
+      MonotonicInstant(continuousNanoseconds: 0),
+      fixture.clock.now(),
+      fixture.clock.now().adding(.seconds(86_401)),
+      MonotonicInstant(continuousNanoseconds: .max),
+    ]
+    for deadline in deadlines {
+      do {
+        _ = try await fixture.backend.acquire(reason: "invalid deadline", deadline: deadline)
+        XCTFail("invalid deadline must not create an unbounded assertion")
+      } catch {
+        XCTAssertEqual(error as? UserPowerAssertionError, .invalidDeadline)
+      }
+    }
+    XCTAssertTrue(fixture.calls.snapshot().creates.isEmpty)
+    let started = try await fixture.start()
+    XCTAssertEqual(started.verdict, .protected(remaining: .seconds(60)))
+    _ = await fixture.controller.stop()
+  }
+
+  func testSubsecondTimeoutCannotBecomeUnbounded() async throws {
+    let fixture = Fixture()
+    let token = try await fixture.backend.acquire(
+      reason: "subsecond", deadline: fixture.clock.now().adding(.milliseconds(250)))
+    XCTAssertEqual(fixture.calls.snapshot().creates.first?.timeout, 1)
+    fixture.calls.advancePowerManager(seconds: 1)
+    XCTAssertTrue(fixture.calls.snapshot().effectiveIDs.isEmpty)
+    try await fixture.backend.release(token)
+  }
+
+  func testAcquisitionLatencyDoesNotRestartTheDuration() async throws {
+    let delayed = Fixture(createReturnDelay: 15)
+    let deadline = delayed.clock.now().adding(.seconds(60))
+    let started = try await delayed.start()
+    XCTAssertEqual(started.trip.hardDeadline, deadline)
+    XCTAssertEqual(started.verdict, .protected(remaining: .seconds(45)))
+    _ = await delayed.controller.stop()
+
+    for releaseFails in [false, true] {
+      let expired = Fixture(
+        releaseResults: releaseFails ? [kIOReturnError] : [], createReturnDelay: 61)
+      let ended = try await expired.start()
+      XCTAssertEqual(ended.trip.phase, releaseFails ? .recoveryPending : .ended)
+      XCTAssertTrue(expired.calls.snapshot().effectiveIDs.isEmpty)
+      XCTAssertTrue(expired.calls.snapshot().readbacks.isEmpty)
+      let recovered = await expired.controller.retryPendingRelease()
+      XCTAssertEqual(recovered.trip.stopReason, .hardDeadlineReached)
+      XCTAssertEqual(recovered.verdict, .inactive)
+      XCTAssertEqual(expired.calls.snapshot().creates.count, 1)
+    }
+  }
+
+  func testReadbackThatCrossesTheDeadlineCannotPublishProtected() async throws {
+    let fixture = Fixture()
+    let backend = DelayedReadbackBackend()
+    let controller = DeskModeController(
+      directController: DirectSafetyLeaseController(
+        leaseBackend: fixture.lease, ownerUID: 501, clock: fixture.clock),
+      assertionBackend: backend, clock: fixture.clock)
+    _ = try await controller.start(
+      allowClosedLid: false, hardCap: .seconds(60), device: fixture.device())
+    await backend.blockNextReadback()
+    let reading = Task { await controller.status() }
+    await backend.waitUntilReadbackIsBlocked()
+    fixture.clock.advance(seconds: 60)
+    await backend.finishReadback()
+    let ended = await reading.value
+    XCTAssertEqual(ended.trip.phase, .ended)
+    XCTAssertEqual(ended.trip.stopReason, .hardDeadlineReached)
+    XCTAssertEqual(ended.verdict, .inactive)
+    let attempts = await backend.releaseAttempts
+    XCTAssertEqual(attempts, 1)
+  }
+
+  func testRuntimeReconcilesOSExpiryWithoutSamplingOrRearming() async throws {
+    let fixture = Fixture()
+    let cache = DisplayRuntimeCache()
+    let runtime = SupervisorRuntime(
+      backend: fixture.lease,
+      sampler: DisplayRuntimeSampler(device: fixture.device(), clock: fixture.clock),
+      statusCache: cache, powerAssertionBackend: fixture.backend, ownerUID: 501,
+      clock: fixture.clock, automaticMonitoring: false)
+    let started = try await runtime.enableDesk(allowClosedLid: false, hardCap: .seconds(60))
+    fixture.calls.advancePowerManager(seconds: 60)
+    fixture.clock.advance(seconds: 60)
+    XCTAssertTrue(fixture.calls.snapshot().effectiveIDs.isEmpty)
+    XCTAssertTrue(fixture.calls.snapshot().releases.isEmpty)
+    let ended = await runtime.currentStatus()
+    let cached = try await cache.load()
+    XCTAssertEqual(ended.sessionID, started.sessionID)
+    XCTAssertEqual(ended.phase, .ended)
+    XCTAssertEqual(ended.mode, .none)
+    XCTAssertEqual(ended.verdict, .inactive)
+    XCTAssertEqual(ended.stopReason, .hardDeadlineReached)
+    XCTAssertEqual(cached?.verdict, .inactive)
+    XCTAssertEqual(cached?.mode, WireSessionMode.none)
+    _ = await runtime.monitorOnce()
+    XCTAssertEqual(fixture.calls.snapshot().creates.count, 1)
+    XCTAssertEqual(fixture.calls.snapshot().releases, [101])
+  }
+
   func testClosedLidSessionKeepsUsingOnlyThePrivilegedLeasePath() async throws {
     let fixture = Fixture()
     let started = try await fixture.controller.start(
@@ -466,9 +638,13 @@ private struct Fixture {
   let lease: DisplayTestLeaseBackend
   let controller: DeskModeController
 
-  init(createResults: [IOReturn] = [], releaseResults: [IOReturn] = []) {
-    calls = RecordingIOPMCalls(createResults: createResults, releaseResults: releaseResults)
-    backend = IOPMUserPowerAssertionBackend(operations: calls.operations)
+  init(
+    createResults: [IOReturn] = [], releaseResults: [IOReturn] = [], createReturnDelay: UInt64 = 0
+  ) {
+    calls = RecordingIOPMCalls(
+      createResults: createResults, releaseResults: releaseResults,
+      clock: clock, createReturnDelay: createReturnDelay)
+    backend = IOPMUserPowerAssertionBackend(operations: calls.operations, clock: clock)
     lease = DisplayTestLeaseBackend(clock: clock)
     controller = DeskModeController(
       directController: DirectSafetyLeaseController(leaseBackend: lease, ownerUID: 501, clock: clock),
@@ -500,12 +676,17 @@ private final class RecordingIOPMCalls: @unchecked Sendable {
     let type: String
     let level: IOPMAssertionLevel
     let reason: String
+    let timeout: Double
+    let timeoutAction: String
+    let expiresAt: Double
   }
 
   struct Snapshot: Sendable {
     let creates: [Creation]
     let releases: [IOPMAssertionID]
     let readbacks: [IOPMAssertionID]
+    let retainedIDs: [IOPMAssertionID]
+    let effectiveIDs: [IOPMAssertionID]
   }
 
   private let lock = NSLock()
@@ -517,24 +698,46 @@ private final class RecordingIOPMCalls: @unchecked Sendable {
   private var createResults: [IOReturn]
   private var releaseResults: [IOReturn]
   private var nextID: IOPMAssertionID = 101
+  // An independent model of the documented OS timeout, driven by the properties
+  // actually submitted to IOKit. This is not a measurement of macOS behaviour.
+  private var powerManagerSeconds: Double = 0
+  private let clock: DisplayTestClock
+  private let createReturnDelay: UInt64
 
-  init(createResults: [IOReturn], releaseResults: [IOReturn]) {
+  init(
+    createResults: [IOReturn], releaseResults: [IOReturn],
+    clock: DisplayTestClock, createReturnDelay: UInt64
+  ) {
     self.createResults = createResults
     self.releaseResults = releaseResults
+    self.clock = clock
+    self.createReturnDelay = createReturnDelay
   }
 
   var operations: IOPMAssertionOperations {
     IOPMAssertionOperations(
-      create: { [self] type, level, reason, id in
+      create: { [self] properties, id in
         lock.lock()
         defer { lock.unlock() }
-        let creation = Creation(type: type as String, level: level, reason: reason as String)
+        let properties = properties as NSDictionary
+        guard let type = properties[kIOPMAssertionTypeKey] as? String,
+          let level = properties[kIOPMAssertionLevelKey] as? NSNumber,
+          let reason = properties[kIOPMAssertionNameKey] as? String,
+          let timeout = properties[kIOPMAssertionTimeoutKey] as? NSNumber,
+          let action = properties[kIOPMAssertionTimeoutActionKey] as? String
+        else { return kIOReturnBadArgument }
+        let creation = Creation(
+          type: type, level: level.uint32Value, reason: reason,
+          timeout: timeout.doubleValue, timeoutAction: action,
+          expiresAt: powerManagerSeconds + timeout.doubleValue)
         creates.append(creation)
         let result = createResults.isEmpty ? kIOReturnSuccess : createResults.removeFirst()
         if result == kIOReturnSuccess {
           id.pointee = nextID
           assertions[nextID] = creation
           nextID += 1
+          powerManagerSeconds += Double(createReturnDelay)
+          clock.advance(seconds: createReturnDelay)
         }
         return result
       },
@@ -544,9 +747,10 @@ private final class RecordingIOPMCalls: @unchecked Sendable {
         readbacks.append(id)
         guard let creation = assertions[id] else { return nil }
         // Default readback is derived from the actual production create call.
+        let level = effectIsActive(creation) ? creation.level : IOPMAssertionLevel(kIOPMAssertionLevelOff)
         var properties: [String: Any] = [
           kIOPMAssertionTypeKey as String: creation.type,
-          kIOPMAssertionLevelKey as String: NSNumber(value: creation.level),
+          kIOPMAssertionLevelKey as String: NSNumber(value: level),
         ]
         switch readback {
         case .created: break
@@ -578,10 +782,26 @@ private final class RecordingIOPMCalls: @unchecked Sendable {
     self.readback = readback
   }
 
+  func advancePowerManager(seconds: Double) {
+    lock.lock()
+    defer { lock.unlock() }
+    powerManagerSeconds += seconds
+  }
+
+  private func effectIsActive(_ creation: Creation) -> Bool {
+    creation.level == IOPMAssertionLevel(kIOPMAssertionLevelOn)
+      && !(creation.timeout > 0
+        && creation.timeoutAction == kIOPMAssertionTimeoutActionTurnOff as String
+        && powerManagerSeconds >= creation.expiresAt)
+  }
+
   func snapshot() -> Snapshot {
     lock.lock()
     defer { lock.unlock() }
-    return Snapshot(creates: creates, releases: releases, readbacks: readbacks)
+    return Snapshot(
+      creates: creates, releases: releases, readbacks: readbacks,
+      retainedIDs: assertions.keys.sorted(),
+      effectiveIDs: assertions.filter { effectIsActive($0.value) }.keys.sorted())
   }
 }
 
@@ -599,7 +819,7 @@ private actor DelayedReadbackBackend: UserPowerAssertionBackend {
   private var releaseObserver: CheckedContinuation<Void, Never>?
   private(set) var releaseAttempts = 0
 
-  func acquire(reason: String) async throws -> UserPowerAssertionToken {
+  func acquire(reason: String, deadline: MonotonicInstant) async throws -> UserPowerAssertionToken {
     guard token == nil else { throw UserPowerAssertionError.alreadyActive }
     let acquired = UserPowerAssertionToken(rawValue: nextID)
     nextID += 1

@@ -77,16 +77,19 @@ public actor DeskModeController {
     guard case .safe = verdict else {
       throw DeskModeError.unsafe(String(describing: verdict))
     }
+    // Fix one deadline before crossing the backend boundary. Acquisition and
+    // readback latency must not grant a fresh full duration after the request.
+    let deadline = clock.now().adding(hardCap)
     do {
       assertionToken = try await assertionBackend.acquire(
-        reason: "Runtinue desk mode"
+        reason: "Runtinue desk mode", deadline: deadline
       )
     } catch {
       throw DeskModeError.assertionFailure(String(describing: error))
     }
     mode = .assertion
     sessionID = UUID()
-    hardDeadline = clock.now().adding(hardCap)
+    hardDeadline = deadline
     latestDevice = device
     latestSafetyVerdict = verdict
     safetyTracker = tracker
@@ -219,6 +222,11 @@ public actor DeskModeController {
   }
 
   private func makeAssertionStatus() async -> SupervisorStatus {
+    // The OS may already have turned the effect off while monitoring was paused.
+    // Reconcile expiry before readback so it is not mislabeled as a lost assertion.
+    if let hardDeadline, clock.now() >= hardDeadline {
+      return await releaseAssertion(reason: .hardDeadlineReached)
+    }
     let observedToken = assertionToken
     let observedSessionID = sessionID
     let assertionIsActive: Bool
@@ -231,6 +239,10 @@ public actor DeskModeController {
     // publish the old readback as protection for a different session or recovery.
     guard mode == .assertion, assertionToken == observedToken, sessionID == observedSessionID else {
       return await status()
+    }
+    // A formerly positive readback must not keep a session alive across its deadline.
+    if let hardDeadline, clock.now() >= hardDeadline {
+      return await releaseAssertion(reason: .hardDeadlineReached)
     }
     guard assertionIsActive else {
       return await releaseAssertion(
