@@ -306,11 +306,20 @@ candidate_pkg=${RUNTINUE_RELEASE_TEST_PKG:-}
 candidate_manifest="${candidate_pkg}.manifest.json"
 if [[ -f "${candidate_pkg}" && -f "${candidate_manifest}" ]]; then
   candidate_sha=$(/usr/bin/shasum -a 256 -- "${candidate_pkg}" | /usr/bin/awk '{print $1}')
-  rollback_manifest="${work_root}/rollback.manifest.json"
-  expect_exit 0 "${script_dir}/release-manifest.sh" create \
-    "${candidate_pkg}" "${rollback_manifest}" development --rollback
+  candidate_kind=$(/usr/bin/plutil -extract kind raw "${candidate_manifest}" 2>/dev/null) || {
+    print -u2 "후보 manifest kind를 읽을 수 없음"
+    exit 1
+  }
+  case "${candidate_kind}" in
+    development|release)
+      ;;
+    *)
+      print -u2 "후보 manifest kind가 올바르지 않음: ${candidate_kind}"
+      exit 1
+      ;;
+  esac
   expect_exit 0 "${script_dir}/release-manifest.sh" verify \
-    "${candidate_pkg}" "${rollback_manifest}" --rollback
+    "${candidate_pkg}" "${candidate_manifest}" --rollback
   expect_exit 0 "${script_dir}/install-package.sh" "${candidate_pkg}" \
     --sha256 "${candidate_sha}" --manifest "${candidate_manifest}"
   expect_exit 77 "${script_dir}/install-package.sh" "${candidate_pkg}" \
@@ -341,13 +350,18 @@ if [[ -f "${candidate_pkg}" && -f "${candidate_manifest}" ]]; then
   done
   print "실제 패키지 번역 리소스 manifest 생성과 경로 및 해시 검증 통과"
 
-  forged_manifest="${work_root}/forged-release.manifest.json"
+  forged_manifest="${work_root}/forged-kind.manifest.json"
   /usr/bin/ditto "${candidate_manifest}" "${forged_manifest}"
-  /usr/bin/plutil -replace kind -string release "${forged_manifest}"
-  /usr/bin/plutil -replace package.signatureStatus -string signed-notarized "${forged_manifest}"
+  if [[ "${candidate_kind}" == development ]]; then
+    /usr/bin/plutil -replace kind -string release "${forged_manifest}"
+    /usr/bin/plutil -replace package.signatureStatus -string signed-notarized "${forged_manifest}"
+  else
+    /usr/bin/plutil -replace kind -string development "${forged_manifest}"
+    /usr/bin/plutil -replace package.signatureStatus -string unsigned-development "${forged_manifest}"
+  fi
   expect_exit 65 "${script_dir}/release-manifest.sh" verify \
     "${candidate_pkg}" "${forged_manifest}"
-  print "unsigned 패키지를 공증된 release로 잘못 표기하는 manifest 거부 통과"
+  print "후보 패키지 서명과 다른 kind를 주장하는 manifest 거부 통과"
 else
   print "실제 패키지 기반 설치와 manifest gate: not-run (RUNTINUE_RELEASE_TEST_PKG 필요)"
 fi
