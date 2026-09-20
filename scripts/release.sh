@@ -9,6 +9,7 @@ version=$(/bin/zsh "${script_dir}/version.sh" --release)
 notary_profile=${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE을 지정해야 합니다}
 pkg="${release_root}/Runtinue-${version}.pkg"
 
+swift test --package-path "${project_root}" -c release --disable-sandbox
 "${script_dir}/package.sh"
 /usr/bin/xcrun notarytool submit "${pkg}" --keychain-profile "${notary_profile}" --wait
 /usr/bin/xcrun stapler staple "${pkg}"
@@ -19,6 +20,7 @@ pkg="${release_root}/Runtinue-${version}.pkg"
 manifest="${pkg}.manifest.json"
 RUNTINUE_NOTARIZATION_VERIFIED=YES \
   "${script_dir}/release-manifest.sh" create "${pkg}" "${manifest}" release
+RUNTINUE_RELEASE_TEST_PKG="${pkg}" "${script_dir}/test-release-tools.sh"
 checksum_file="${pkg}.sha256"
 checksum=$(/usr/bin/shasum -a 256 -- "${pkg}" | /usr/bin/awk '{print $1}')
 if [[ -e "${checksum_file}" || -L "${checksum_file}" ]]; then
