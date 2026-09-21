@@ -523,7 +523,15 @@ final class TimedDisplayAssertionTests: XCTestCase {
     for releaseFails in [false, true] {
       let expired = Fixture(
         releaseResults: releaseFails ? [kIOReturnError] : [], createReturnDelay: 61)
-      let ended = try await expired.start()
+      do {
+        _ = try await expired.start()
+        XCTFail("an assertion acquired after its deadline must reject the start request")
+      } catch let error as DeskModeError {
+        XCTAssertEqual(error, .protectionNotConfirmed)
+      } catch {
+        XCTFail("unexpected start error: \(error)")
+      }
+      let ended = await expired.controller.status()
       XCTAssertEqual(ended.trip.phase, releaseFails ? .recoveryPending : .ended)
       XCTAssertTrue(expired.calls.snapshot().effectiveIDs.isEmpty)
       XCTAssertTrue(expired.calls.snapshot().readbacks.isEmpty)
