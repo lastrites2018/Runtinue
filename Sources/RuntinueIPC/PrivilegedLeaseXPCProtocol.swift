@@ -1,7 +1,7 @@
 import Foundation
 
 public enum RuntinueIPCContract {
-  public static let protocolVersion = 5
+  public static let protocolVersion = 6
   public static let maximumRequestBytes = 64 * 1_024
   public static let helperMachServiceName = "io.github.lastrites2018.runtinue.helper"
   public static let supervisorMachServiceName = "io.github.lastrites2018.runtinue.supervisor"

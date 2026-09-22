@@ -39,19 +39,77 @@ public actor FileSupervisorConfigurationStore: SupervisorConfigurationCaching {
   }
 
   private let fileURL: URL
+  private let setTemporaryFilePermissions: @Sendable (Int32, mode_t) -> Int32
 
   public init(fileURL: URL = FileSupervisorConfigurationStore.productionURL) {
     self.fileURL = fileURL
+    self.setTemporaryFilePermissions = { descriptor, permissions in
+      Darwin.fchmod(descriptor, permissions)
+    }
+  }
+
+  init(
+    fileURL: URL,
+    setTemporaryFilePermissions: @escaping @Sendable (Int32, mode_t) -> Int32
+  ) {
+    self.fileURL = fileURL
+    self.setTemporaryFilePermissions = setTemporaryFilePermissions
   }
 
   public func save(_ configuration: PersistedSupervisorConfiguration) throws {
     try prepareDirectory()
     try rejectSymlink(at: fileURL)
     let data = try JSONEncoder().encode(configuration)
-    try data.write(to: fileURL, options: [.atomic])
-    guard chmod(fileURL.path, 0o600) == 0 else {
+    let temporaryURL = fileURL.deletingLastPathComponent().appendingPathComponent(
+      ".config.\(UUID().uuidString).tmp",
+      isDirectory: false
+    )
+    let temporaryPath = temporaryURL.path
+    let descriptor = Darwin.open(
+      temporaryPath,
+      O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW,
+      S_IRUSR | S_IWUSR
+    )
+    guard descriptor >= 0 else {
       throw POSIXError(.init(rawValue: errno) ?? .EIO)
     }
+    var shouldRemoveTemporaryFile = true
+    defer {
+      Darwin.close(descriptor)
+      if shouldRemoveTemporaryFile {
+        Darwin.unlink(temporaryPath)
+      }
+    }
+    guard setTemporaryFilePermissions(descriptor, S_IRUSR | S_IWUSR) == 0 else {
+      throw POSIXError(.init(rawValue: errno) ?? .EIO)
+    }
+    try data.withUnsafeBytes { rawBuffer in
+      guard let baseAddress = rawBuffer.baseAddress else {
+        return
+      }
+      var offset = 0
+      while offset < rawBuffer.count {
+        let written = Darwin.write(
+          descriptor,
+          baseAddress.advanced(by: offset),
+          rawBuffer.count - offset
+        )
+        if written < 0, errno == EINTR {
+          continue
+        }
+        guard written > 0 else {
+          throw POSIXError(.init(rawValue: errno) ?? .EIO)
+        }
+        offset += written
+      }
+    }
+    guard Darwin.fsync(descriptor) == 0 else {
+      throw POSIXError(.init(rawValue: errno) ?? .EIO)
+    }
+    guard Darwin.rename(temporaryPath, fileURL.path) == 0 else {
+      throw POSIXError(.init(rawValue: errno) ?? .EIO)
+    }
+    shouldRemoveTemporaryFile = false
   }
 
   public func load() throws -> PersistedSupervisorConfiguration? {

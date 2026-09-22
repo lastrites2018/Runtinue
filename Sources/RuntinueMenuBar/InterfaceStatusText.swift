@@ -54,6 +54,12 @@ enum InterfaceStatusText {
     if detail == "adaptive mode is waiting for activity" {
       return L("연동한 작업 도구에서 활동 신호를 기다립니다.", "Waiting for activity from an integrated tool.")
     }
+    if detail == "adaptive mode disable is pending configuration recovery" {
+      return L(
+        "Adaptive 모드 끄기를 마무리하지 못했습니다. 설정 저장소 복구를 기다립니다.",
+        "Adaptive mode could not finish turning off. Waiting for settings recovery."
+      )
+    }
     let prefix = "adaptive activity source="
     if detail.hasPrefix(prefix) {
       let parts = String(detail.dropFirst(prefix.count)).components(separatedBy: ", session=")
@@ -91,6 +97,10 @@ enum InterfaceStatusText {
       L(
         "시간 설정을 적용하지 못했습니다. 입력 범위를 확인하세요.",
         "Could not apply the time settings. Check the allowed range.")
+    case "configurationUnavailable":
+      L(
+        "Adaptive 모드 설정을 안전하게 저장하지 못했습니다. 진단 정보를 확인한 뒤 다시 시도하세요.",
+        "Could not safely save the Adaptive mode setting. Check Diagnostics and try again.")
     default:
       L(
         "현재 상태에서 요청을 적용하지 못했습니다. 덮개를 열어 두고 진단 정보를 확인하세요.",

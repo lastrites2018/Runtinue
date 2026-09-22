@@ -26,6 +26,7 @@ public enum SupervisorRuntimeError: Error, Equatable, Sendable {
   case deskNotEnabled
   case adaptiveSessionUnavailable
   case startupRecoveryPending
+  case configurationUnavailable
 }
 
 public struct AdaptiveModeConfiguration: Equatable, Sendable {
@@ -58,6 +59,16 @@ public actor SupervisorRuntime {
     let receivedAt: MonotonicInstant
   }
 
+  private enum ModeTransition: Equatable {
+    case startingTrip
+    case enablingAdaptive
+    case disablingAdaptive
+    case recordingAdaptiveActivity
+    case enablingDesk
+    case disablingDesk
+    case stoppingSession
+  }
+
   private let backend: any SupervisorLeaseBackend
   private let controller: SafetySupervisorController
   private let directController: DirectSafetyLeaseController
@@ -73,6 +84,9 @@ public actor SupervisorRuntime {
   private let automaticMonitoring: Bool
 
   private var hasStarted = false
+  private var startupInProgress = false
+  private var modeTransition: ModeTransition?
+  private var configurationRecoveryPending = false
   private var commuteTarget: CommuteNetworkTarget?
   private var adaptiveConfiguration: AdaptiveModeConfiguration?
   private var deskConfiguration: DeskModeConfiguration?
@@ -85,6 +99,7 @@ public actor SupervisorRuntime {
   private var startupRecoveryDetail: String?
   private var lidConflictWasObserved = false
   private var lidConflictEventPending = false
+  private var configurationStoreFailureObserved = false
   private var monitorTask: Task<Void, Never>?
   private var temperatureMonitorTask: Task<Void, Never>?
   private var latestTemperatureTelemetry: WireTemperatureTelemetry?
@@ -142,6 +157,8 @@ public actor SupervisorRuntime {
       return await currentStatus()
     }
     hasStarted = true
+    startupInProgress = true
+    defer { startupInProgress = false }
     startTemperatureMonitorIfNeeded()
     switch await backend.releaseExistingOwnedLease() {
     case .released:
@@ -224,7 +241,10 @@ public actor SupervisorRuntime {
     hardCap: Duration,
     allowAlreadyConnected: Bool = false
   ) async throws -> SupervisorStatusWire {
+    try beginModeTransition(.startingTrip)
+    defer { releaseModeTransition(.startingTrip) }
     _ = await startup()
+    try await recoverConfigurationIfNeeded()
     guard startupRecoveryDetail == nil else {
       throw SupervisorRuntimeError.startupRecoveryPending
     }
@@ -340,9 +360,11 @@ public actor SupervisorRuntime {
     if adaptiveDisablePending,
       status.trip.phase == .idle || status.trip.phase == .ended
     {
-      adaptiveConfiguration = nil
-      adaptiveDisablePending = false
-      stopMonitor()
+      if await persistAdaptiveDisabledConfiguration() {
+        adaptiveConfiguration = nil
+        adaptiveDisablePending = false
+        stopMonitor()
+      }
     }
     let wire = makeWireStatus(
       status,
@@ -367,9 +389,6 @@ public actor SupervisorRuntime {
       break
     }
     settleDeskSession(status)
-    if status.trip.phase == .idle || status.trip.phase == .ended {
-      try? await configurationStore?.remove()
-    }
     let wire = makeWireStatus(
       status,
       mode: deskConfiguration == nil ? .none : .desk,
@@ -390,7 +409,10 @@ public actor SupervisorRuntime {
     idleGrace: Duration,
     hardCap: Duration
   ) async throws -> SupervisorStatusWire {
+    try beginModeTransition(.enablingAdaptive)
+    defer { releaseModeTransition(.enablingAdaptive) }
     _ = await startup()
+    try await recoverConfigurationIfNeeded()
     guard startupRecoveryDetail == nil else {
       throw SupervisorRuntimeError.startupRecoveryPending
     }
@@ -407,15 +429,23 @@ public actor SupervisorRuntime {
     else {
       throw SupervisorRuntimeError.invalidAdaptiveConfiguration
     }
-    adaptiveConfiguration = AdaptiveModeConfiguration(
+    let configuration = AdaptiveModeConfiguration(
       idleGrace: idleGrace,
       hardCap: hardCap
     )
+    guard await persistAdaptiveConfiguration(configuration) else {
+      if !(await persistAdaptiveDisabledConfiguration()) {
+        adaptiveConfiguration = configuration
+        adaptiveDisablePending = true
+        configurationRecoveryPending = true
+      }
+      throw SupervisorRuntimeError.configurationUnavailable
+    }
+    adaptiveConfiguration = configuration
     lastAdaptiveActivity = nil
     lastAdaptiveActivitySource = nil
     lastAdaptiveNamedSession = nil
     adaptiveDisablePending = false
-    await persistAdaptiveConfiguration()
     if automaticMonitoring {
       startMonitorIfNeeded()
     }
@@ -429,15 +459,20 @@ public actor SupervisorRuntime {
 
   @discardableResult
   public func disableAdaptive() async throws -> SupervisorStatusWire {
+    try beginModeTransition(.disablingAdaptive)
+    defer { releaseModeTransition(.disablingAdaptive) }
     _ = await startup()
+    if configurationRecoveryPending, adaptiveConfiguration == nil {
+      try await recoverConfigurationIfNeeded()
+    }
     guard adaptiveConfiguration != nil else {
       if commuteTarget != nil || deskConfiguration != nil {
         throw SupervisorRuntimeError.modeConflict
       }
       throw SupervisorRuntimeError.adaptiveNotEnabled
     }
-    let current = await directController.status()
     adaptiveDisablePending = true
+    let current = await directController.status()
     let status: SupervisorStatus
     switch current.trip.phase {
     case .acquiringLease, .active:
@@ -450,8 +485,13 @@ public actor SupervisorRuntime {
     lastAdaptiveActivity = nil
     lastAdaptiveActivitySource = nil
     lastAdaptiveNamedSession = nil
-    try? await configurationStore?.remove()
-    if status.trip.phase == .idle || status.trip.phase == .ended {
+    let configurationWasDisabled = await persistAdaptiveDisabledConfiguration()
+    if configurationWasDisabled {
+      configurationRecoveryPending = false
+    }
+    if configurationWasDisabled,
+      status.trip.phase == .idle || status.trip.phase == .ended
+    {
       adaptiveConfiguration = nil
       adaptiveDisablePending = false
       if startupRecoveryDetail == nil {
@@ -467,7 +507,11 @@ public actor SupervisorRuntime {
         mode: adaptiveConfiguration == nil ? .none : .adaptive
       )
     }
-    return await persist(wire)
+    let published = await persist(wire)
+    guard configurationWasDisabled else {
+      throw SupervisorRuntimeError.configurationUnavailable
+    }
+    return published
   }
 
   @discardableResult
@@ -475,7 +519,10 @@ public actor SupervisorRuntime {
     source: String = "activity",
     namedSession: String? = nil
   ) async throws -> SupervisorStatusWire {
+    try beginModeTransition(.recordingAdaptiveActivity)
+    defer { releaseModeTransition(.recordingAdaptiveActivity) }
     _ = await startup()
+    try await recoverConfigurationIfNeeded()
     guard startupRecoveryDetail == nil else {
       throw SupervisorRuntimeError.startupRecoveryPending
     }
@@ -519,7 +566,10 @@ public actor SupervisorRuntime {
     allowClosedLid: Bool,
     hardCap: Duration
   ) async throws -> SupervisorStatusWire {
+    try beginModeTransition(.enablingDesk)
+    defer { releaseModeTransition(.enablingDesk) }
     _ = await startup()
+    try await recoverConfigurationIfNeeded()
     guard startupRecoveryDetail == nil else {
       throw SupervisorRuntimeError.startupRecoveryPending
     }
@@ -578,7 +628,10 @@ public actor SupervisorRuntime {
 
   @discardableResult
   public func disableDesk() async throws -> SupervisorStatusWire {
+    try beginModeTransition(.disablingDesk)
+    defer { releaseModeTransition(.disablingDesk) }
     _ = await startup()
+    try await recoverConfigurationIfNeeded()
     guard deskConfiguration != nil else {
       if commuteTarget != nil || adaptiveConfiguration != nil {
         throw SupervisorRuntimeError.modeConflict
@@ -592,7 +645,6 @@ public actor SupervisorRuntime {
       deskDisablePending = false
       stopMonitor()
     }
-    try? await configurationStore?.remove()
     let wire = makeWireStatus(
       status,
       mode: deskConfiguration == nil ? .none : .desk,
@@ -603,7 +655,10 @@ public actor SupervisorRuntime {
 
   @discardableResult
   public func stop(expectedSessionID: UUID?) async throws -> SupervisorStatusWire {
+    try beginModeTransition(.stoppingSession)
+    defer { releaseModeTransition(.stoppingSession) }
     _ = await startup()
+    try await recoverConfigurationIfNeeded()
     let usesDesk = deskConfiguration != nil
     let usesAdaptive = adaptiveConfiguration != nil && commuteTarget == nil
     let current: SupervisorStatus
@@ -629,7 +684,6 @@ public actor SupervisorRuntime {
         deskDisablePending = false
         stopMonitor()
       }
-      try? await configurationStore?.remove()
     } else if usesAdaptive {
       status = await directController.stop()
     } else {
@@ -670,7 +724,9 @@ public actor SupervisorRuntime {
       wire = makeWireStatus(
         await directController.status(),
         mode: .adaptive,
-        inactiveDetail: "adaptive mode is waiting for activity",
+        inactiveDetail: adaptiveDisablePending
+          ? "adaptive mode disable is pending configuration recovery"
+          : "adaptive mode is waiting for activity",
         protectedDetail: adaptiveActivityDetail
       )
     } else {
@@ -833,9 +889,13 @@ public actor SupervisorRuntime {
     }
     await eventRecorder?.observe(status)
     var issues = await eventRecorder?.issues() ?? []
+    if configurationStoreFailureObserved {
+      issues.append(.configurationUnavailable)
+    }
     let buildID = eventRecorder?.buildID
     let observed = status.withObservation(
-      eventRecorder == nil ? nil : WireObservationStatus(buildID: buildID, issues: issues)
+      eventRecorder == nil && issues.isEmpty
+        ? nil : WireObservationStatus(buildID: buildID, issues: issues)
     )
     do {
       try await historyRecorder?.record(observed)
@@ -858,12 +918,42 @@ public actor SupervisorRuntime {
   }
 
   private func restoreConfiguration() async {
-    guard let stored = try? await configurationStore?.load(),
-      stored.version == PersistedSupervisorConfiguration.currentVersion
-    else {
+    guard let configurationStore else {
       return
     }
-    if let idleGraceSeconds = stored.adaptiveIdleGraceSeconds,
+    let stored: PersistedSupervisorConfiguration?
+    do {
+      stored = try await configurationStore.load()
+    } catch {
+      configurationStoreFailureObserved = true
+      if !(await persistAdaptiveDisabledConfiguration()) {
+        configurationRecoveryPending = true
+      }
+      return
+    }
+    guard let stored else {
+      return
+    }
+    guard stored.version == PersistedSupervisorConfiguration.currentVersion else {
+      configurationStoreFailureObserved = true
+      if !(await persistAdaptiveDisabledConfiguration()) {
+        configurationRecoveryPending = true
+      }
+      return
+    }
+    let hasAdaptiveConfiguration =
+      stored.adaptiveIdleGraceSeconds != nil || stored.adaptiveHardCapSeconds != nil
+    let hasDeskConfiguration = stored.deskAllowClosedLid != nil || stored.deskHardCapSeconds != nil
+    if !hasAdaptiveConfiguration {
+      if hasDeskConfiguration {
+        if !(await persistAdaptiveDisabledConfiguration()) {
+          configurationRecoveryPending = true
+        }
+      }
+      return
+    }
+    if !hasDeskConfiguration,
+      let idleGraceSeconds = stored.adaptiveIdleGraceSeconds,
       let hardCapSeconds = stored.adaptiveHardCapSeconds,
       idleGraceSeconds.isFinite,
       hardCapSeconds.isFinite,
@@ -878,21 +968,91 @@ public actor SupervisorRuntime {
       )
       return
     }
-    if stored.deskHardCapSeconds != nil {
-      try? await configurationStore?.remove()
+    configurationStoreFailureObserved = true
+    if !(await persistAdaptiveDisabledConfiguration()) {
+      configurationRecoveryPending = true
     }
   }
 
-  private func persistAdaptiveConfiguration() async {
-    guard let adaptiveConfiguration else {
+  private func beginModeTransition(_ transition: ModeTransition) throws {
+    guard modeTransition == nil else {
+      throw SupervisorRuntimeError.modeConflict
+    }
+    modeTransition = transition
+  }
+
+  private func releaseModeTransition(_ expected: ModeTransition) {
+    if modeTransition == expected {
+      modeTransition = nil
+    }
+  }
+
+  private func recoverConfigurationIfNeeded() async throws {
+    guard !startupInProgress else {
+      throw SupervisorRuntimeError.startupRecoveryPending
+    }
+    guard configurationRecoveryPending else {
       return
     }
-    try? await configurationStore?.save(
-      PersistedSupervisorConfiguration(
-        adaptiveIdleGraceSeconds: adaptiveConfiguration.idleGrace.secondsValue,
-        adaptiveHardCapSeconds: adaptiveConfiguration.hardCap.secondsValue
+    guard await persistAdaptiveDisabledConfiguration() else {
+      throw SupervisorRuntimeError.configurationUnavailable
+    }
+    configurationRecoveryPending = false
+    if adaptiveDisablePending {
+      adaptiveConfiguration = nil
+      adaptiveDisablePending = false
+    }
+  }
+
+  private func persistAdaptiveConfiguration(
+    _ configuration: AdaptiveModeConfiguration
+  ) async -> Bool {
+    guard let configurationStore else {
+      return true
+    }
+    do {
+      try await configurationStore.save(
+        PersistedSupervisorConfiguration(
+          adaptiveIdleGraceSeconds: configuration.idleGrace.secondsValue,
+          adaptiveHardCapSeconds: configuration.hardCap.secondsValue
+        )
       )
-    )
+      return true
+    } catch {
+      configurationStoreFailureObserved = true
+      return false
+    }
+  }
+
+  private func persistAdaptiveDisabledConfiguration() async -> Bool {
+    guard let configurationStore else {
+      return true
+    }
+    do {
+      try await configurationStore.save(
+        PersistedSupervisorConfiguration(
+          adaptiveIdleGraceSeconds: nil,
+          adaptiveHardCapSeconds: nil
+        )
+      )
+    } catch {
+      configurationStoreFailureObserved = true
+      do {
+        try await configurationStore.remove()
+        return true
+      } catch {
+        configurationStoreFailureObserved = true
+        return false
+      }
+    }
+    do {
+      try await configurationStore.remove()
+    } catch {
+      configurationStoreFailureObserved = true
+      // The disabled tombstone was already persisted, so a later startup
+      // cannot restore the stale adaptive configuration.
+    }
+    return true
   }
 
   private func isTerminal(_ phase: WireTripPhase) -> Bool {
