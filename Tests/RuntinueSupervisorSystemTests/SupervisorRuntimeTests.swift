@@ -900,6 +900,232 @@ final class SupervisorRuntimeTests: XCTestCase {
     XCTAssertEqual(completedAssertion.acquireCount, 1)
   }
 
+  func testCancelledAdaptiveDisableKeepsDirectHandoffAndBlocksCompetingStart() async throws {
+    let clock = RuntimeManualClock()
+    let backend = RuntimeFakeBackend(clock: clock)
+    let sampler = RuntimeBlockingEnvironmentSampler(
+      snapshot: runtimeSnapshot(ssid: "Office", clock: clock)
+    )
+    let configurationStore = RuntimeFakeConfigurationStore()
+    let runtime = makeRuntime(
+      backend: backend,
+      sampler: sampler,
+      cache: RuntimeFakeCache(),
+      configurationStore: configurationStore,
+      clock: clock
+    )
+    _ = try await runtime.enableAdaptive(
+      idleGrace: .seconds(120),
+      hardCap: .seconds(3_600)
+    )
+    await sampler.blockNextSample()
+    let activity = Task { try await runtime.activityPing() }
+    await sampler.waitUntilBlocked()
+    await configurationStore.blockNextSave()
+    let disabling = Task { try await runtime.disableAdaptive() }
+    await waitForQueuedSafetyTransitions(1, in: runtime)
+    disabling.cancel()
+
+    await sampler.unblock()
+    let protected = try await activity.value
+    await configurationStore.waitUntilSaveBlocked()
+    do {
+      _ = try await runtime.startTrip(
+        expectedHotspotSSID: "iPhone",
+        hotspotHandoffTimeout: .seconds(900),
+        hardCap: .seconds(3_600)
+      )
+      XCTFail("a competing start must not steal a direct cleanup handoff")
+    } catch {
+      XCTAssertEqual(error as? SupervisorRuntimeError, .modeConflict)
+    }
+    await configurationStore.unblockSave()
+    let disabled = try await disabling.value
+    let persisted = await configurationStore.snapshot()
+    let calls = await backend.snapshot()
+    guard case .available(let live) = await backend.liveStatus() else {
+      return XCTFail("missing helper observation")
+    }
+
+    XCTAssertEqual(protected.verdict, .protected)
+    XCTAssertEqual(disabled.mode, .none)
+    XCTAssertNil(persisted)
+    XCTAssertEqual(calls.acquireCount, 1)
+    XCTAssertEqual(calls.releaseCount, 1)
+    XCTAssertEqual(live.sleepOverride, .normal)
+  }
+
+  func testDeskDisableQueuesBehindBlockedClosedLidEnableAndReleasesLease() async throws {
+    let clock = RuntimeManualClock()
+    let backend = RuntimeFakeBackend(clock: clock)
+    let sampler = RuntimeBlockingEnvironmentSampler(
+      snapshot: runtimeSnapshot(ssid: "Office", clock: clock)
+    )
+    let assertionBackend = RuntimeFakePowerAssertionBackend()
+    let runtime = makeRuntime(
+      backend: backend,
+      sampler: sampler,
+      cache: RuntimeFakeCache(),
+      configurationStore: RuntimeFakeConfigurationStore(),
+      powerAssertionBackend: assertionBackend,
+      clock: clock
+    )
+    _ = await runtime.startup()
+    await sampler.blockNextSample()
+    let enabling = Task {
+      try await runtime.enableDesk(
+        allowClosedLid: true,
+        hardCap: .seconds(3_600)
+      )
+    }
+    await sampler.waitUntilBlocked()
+    let disabling = Task { try await runtime.disableDesk() }
+    await waitForQueuedSafetyTransitions(1, in: runtime)
+
+    await sampler.unblock()
+    let enabled = try await enabling.value
+    let disabled = try await disabling.value
+    let assertion = await assertionBackend.snapshot()
+    let calls = await backend.snapshot()
+    guard case .available(let live) = await backend.liveStatus() else {
+      return XCTFail("missing helper observation")
+    }
+
+    XCTAssertEqual(enabled.mode, .desk)
+    XCTAssertEqual(enabled.verdict, .protected)
+    XCTAssertEqual(disabled.mode, .none)
+    XCTAssertFalse(assertion.isActive)
+    XCTAssertEqual(assertion.acquireCount, 0)
+    XCTAssertEqual(assertion.releaseCount, 0)
+    XCTAssertEqual(calls.acquireCount, 1)
+    XCTAssertEqual(calls.releaseCount, 1)
+    XCTAssertEqual(live.sleepOverride, .normal)
+  }
+
+  func testStopQueuesBehindBlockedTripStart() async throws {
+    let clock = RuntimeManualClock()
+    let sampler = RuntimeBlockingEnvironmentSampler(
+      snapshot: runtimeSnapshot(ssid: "Office", clock: clock)
+    )
+    let runtime = makeRuntime(
+      backend: RuntimeFakeBackend(clock: clock),
+      sampler: sampler,
+      cache: RuntimeFakeCache(),
+      clock: clock
+    )
+    _ = await runtime.startup()
+    await sampler.blockNextSample()
+    let starting = Task {
+      try await runtime.startTrip(
+        expectedHotspotSSID: "iPhone",
+        hotspotHandoffTimeout: .seconds(900),
+        hardCap: .seconds(3_600)
+      )
+    }
+    await sampler.waitUntilBlocked()
+    let stopping = Task { try await runtime.stop(expectedSessionID: nil) }
+    await waitForQueuedSafetyTransitions(1, in: runtime)
+
+    await sampler.unblock()
+    let started = try await starting.value
+    let stopped = try await stopping.value
+    let current = await runtime.currentStatus()
+
+    XCTAssertEqual(started.mode, .trip)
+    XCTAssertEqual(started.verdict, .waitingForHotspot)
+    XCTAssertEqual(stopped.mode, .trip)
+    XCTAssertEqual(stopped.phase, .ended)
+    XCTAssertEqual(current.mode, .none)
+  }
+
+  func testThrowingQueuedStopHandsOffToTheNextDisable() async throws {
+    let clock = RuntimeManualClock()
+    let configurationStore = RuntimeFakeConfigurationStore()
+    let runtime = makeRuntime(
+      backend: RuntimeFakeBackend(clock: clock),
+      sampler: RuntimeFakeSampler(snapshots: []),
+      cache: RuntimeFakeCache(),
+      configurationStore: configurationStore,
+      clock: clock
+    )
+    _ = await runtime.startup()
+    await configurationStore.blockNextSave()
+    let enabling = Task {
+      try await runtime.enableAdaptive(
+        idleGrace: .seconds(120),
+        hardCap: .seconds(3_600)
+      )
+    }
+    await configurationStore.waitUntilSaveBlocked()
+    let stopping = Task { try await runtime.stop(expectedSessionID: nil) }
+    await waitForQueuedSafetyTransitions(1, in: runtime)
+    let disabling = Task { try await runtime.disableAdaptive() }
+    await waitForQueuedSafetyTransitions(2, in: runtime)
+
+    await configurationStore.unblockSave()
+    _ = try await enabling.value
+    do {
+      _ = try await stopping.value
+      XCTFail("inactive Adaptive mode has no session to stop")
+    } catch {
+      XCTAssertEqual(error as? SupervisorRuntimeError, .sessionNotRunning)
+    }
+    let disabled = try await disabling.value
+    let persisted = await configurationStore.snapshot()
+
+    XCTAssertEqual(disabled.mode, .none)
+    XCTAssertNil(persisted)
+  }
+
+  func testQueuedSafetyTransitionsRunInFIFOOrder() async throws {
+    let clock = RuntimeManualClock()
+    let backend = RuntimeFakeBackend(clock: clock)
+    let sampler = RuntimeBlockingEnvironmentSampler(
+      snapshot: runtimeSnapshot(ssid: "Office", clock: clock)
+    )
+    let runtime = makeRuntime(
+      backend: backend,
+      sampler: sampler,
+      cache: RuntimeFakeCache(),
+      configurationStore: RuntimeFakeConfigurationStore(),
+      clock: clock
+    )
+    _ = await runtime.startup()
+    await sampler.blockNextSample()
+    let enabling = Task {
+      try await runtime.enableDesk(
+        allowClosedLid: true,
+        hardCap: .seconds(3_600)
+      )
+    }
+    await sampler.waitUntilBlocked()
+    let disabling = Task { try await runtime.disableDesk() }
+    await waitForQueuedSafetyTransitions(1, in: runtime)
+    let stopping = Task { try await runtime.stop(expectedSessionID: nil) }
+    await waitForQueuedSafetyTransitions(2, in: runtime)
+
+    await sampler.unblock()
+    let enabled = try await enabling.value
+    let disabled = try await disabling.value
+    do {
+      _ = try await stopping.value
+      XCTFail("FIFO cleanup must disable Desk mode before stop runs")
+    } catch {
+      XCTAssertEqual(error as? SupervisorRuntimeError, .sessionNotRunning)
+    }
+    let calls = await backend.snapshot()
+    guard case .available(let live) = await backend.liveStatus() else {
+      return XCTFail("missing helper observation")
+    }
+
+    XCTAssertEqual(enabled.mode, .desk)
+    XCTAssertEqual(enabled.verdict, .protected)
+    XCTAssertEqual(disabled.mode, .none)
+    XCTAssertEqual(calls.acquireCount, 1)
+    XCTAssertEqual(calls.releaseCount, 1)
+    XCTAssertEqual(live.sleepOverride, .normal)
+  }
+
   func testAdaptiveEnableRejectsWhenConfigurationCannotBeSaved() async {
     let clock = RuntimeManualClock()
     let configurationStore = RuntimeFakeConfigurationStore()
@@ -1210,6 +1436,43 @@ final class SupervisorRuntimeTests: XCTestCase {
     }
   }
 
+  func testAdaptiveDisableRetriesAfterRemoveDeletesThenThrows() async throws {
+    let clock = RuntimeManualClock()
+    let configurationStore = RuntimeFakeConfigurationStore()
+    let runtime = makeRuntime(
+      backend: RuntimeFakeBackend(clock: clock),
+      sampler: RuntimeFakeSampler(snapshots: []),
+      cache: RuntimeFakeCache(),
+      configurationStore: configurationStore,
+      clock: clock
+    )
+    _ = try await runtime.enableAdaptive(
+      idleGrace: .seconds(120),
+      hardCap: .seconds(3_600)
+    )
+    await configurationStore.setSaveFailure(true)
+    await configurationStore.setRemoveFailure(true, afterRemoving: true)
+
+    do {
+      _ = try await runtime.disableAdaptive()
+      XCTFail("unconfirmed directory sync must keep disable pending")
+    } catch {
+      XCTAssertEqual(error as? SupervisorRuntimeError, .configurationUnavailable)
+    }
+    let pending = await runtime.currentStatus()
+    let removedButUnconfirmed = await configurationStore.snapshot()
+    XCTAssertEqual(pending.mode, .adaptive)
+    XCTAssertNil(removedButUnconfirmed)
+
+    await configurationStore.setSaveFailure(false)
+    await configurationStore.setRemoveFailure(false)
+    let disabled = try await runtime.disableAdaptive()
+    let persisted = await configurationStore.snapshot()
+
+    XCTAssertEqual(disabled.mode, .none)
+    XCTAssertNil(persisted)
+  }
+
   func testTripCannotStartWhileAdaptiveModeIsEnabled() async throws {
     let clock = RuntimeManualClock()
     let runtime = makeRuntime(
@@ -1495,6 +1758,19 @@ final class SupervisorRuntimeTests: XCTestCase {
       clock: clock,
       automaticMonitoring: false
     )
+  }
+
+  private func waitForQueuedSafetyTransitions(
+    _ expected: Int,
+    in runtime: SupervisorRuntime
+  ) async {
+    for _ in 0..<1_000 {
+      if await runtime.queuedSafetyTransitionCountForTesting() == expected {
+        return
+      }
+      try? await Task.sleep(for: .milliseconds(1))
+    }
+    XCTFail("expected \(expected) queued safety transition(s)")
   }
 }
 
@@ -1815,6 +2091,7 @@ private actor RuntimeFakeConfigurationStore: SupervisorConfigurationCaching {
   private var saveWritesBeforeFailure = false
   private var loadFails = false
   private var removeFails = false
+  private var removeWritesBeforeFailure = false
   private var shouldBlockNextSave = false
   private var saveContinuation: CheckedContinuation<Void, Never>?
   private var saveBlockedWaiters: [CheckedContinuation<Void, Never>] = []
@@ -1856,6 +2133,9 @@ private actor RuntimeFakeConfigurationStore: SupervisorConfigurationCaching {
 
   func remove() async throws {
     if removeFails {
+      if removeWritesBeforeFailure {
+        configuration = nil
+      }
       throw CocoaError(.fileWriteNoPermission)
     }
     configuration = nil
@@ -1870,8 +2150,9 @@ private actor RuntimeFakeConfigurationStore: SupervisorConfigurationCaching {
     loadFails = enabled
   }
 
-  func setRemoveFailure(_ enabled: Bool) {
+  func setRemoveFailure(_ enabled: Bool, afterRemoving: Bool = false) {
     removeFails = enabled
+    removeWritesBeforeFailure = enabled && afterRemoving
   }
 
   func blockNextSave() {

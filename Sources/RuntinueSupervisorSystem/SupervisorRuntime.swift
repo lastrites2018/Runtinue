@@ -69,6 +69,11 @@ public actor SupervisorRuntime {
     case stoppingSession
   }
 
+  private struct QueuedModeTransition {
+    let transition: ModeTransition
+    let continuation: CheckedContinuation<Void, Never>
+  }
+
   private let backend: any SupervisorLeaseBackend
   private let controller: SafetySupervisorController
   private let directController: DirectSafetyLeaseController
@@ -86,6 +91,7 @@ public actor SupervisorRuntime {
   private var hasStarted = false
   private var startupInProgress = false
   private var modeTransition: ModeTransition?
+  private var queuedSafetyTransitions: [QueuedModeTransition] = []
   private var configurationRecoveryPending = false
   private var commuteTarget: CommuteNetworkTarget?
   private var adaptiveConfiguration: AdaptiveModeConfiguration?
@@ -459,7 +465,7 @@ public actor SupervisorRuntime {
 
   @discardableResult
   public func disableAdaptive() async throws -> SupervisorStatusWire {
-    try beginModeTransition(.disablingAdaptive)
+    await beginQueuedSafetyTransition(.disablingAdaptive)
     defer { releaseModeTransition(.disablingAdaptive) }
     _ = await startup()
     if configurationRecoveryPending, adaptiveConfiguration == nil {
@@ -628,7 +634,7 @@ public actor SupervisorRuntime {
 
   @discardableResult
   public func disableDesk() async throws -> SupervisorStatusWire {
-    try beginModeTransition(.disablingDesk)
+    await beginQueuedSafetyTransition(.disablingDesk)
     defer { releaseModeTransition(.disablingDesk) }
     _ = await startup()
     try await recoverConfigurationIfNeeded()
@@ -655,7 +661,7 @@ public actor SupervisorRuntime {
 
   @discardableResult
   public func stop(expectedSessionID: UUID?) async throws -> SupervisorStatusWire {
-    try beginModeTransition(.stoppingSession)
+    await beginQueuedSafetyTransition(.stoppingSession)
     defer { releaseModeTransition(.stoppingSession) }
     _ = await startup()
     try await recoverConfigurationIfNeeded()
@@ -975,16 +981,43 @@ public actor SupervisorRuntime {
   }
 
   private func beginModeTransition(_ transition: ModeTransition) throws {
-    guard modeTransition == nil else {
+    guard modeTransition == nil, queuedSafetyTransitions.isEmpty else {
       throw SupervisorRuntimeError.modeConflict
     }
     modeTransition = transition
   }
 
-  private func releaseModeTransition(_ expected: ModeTransition) {
-    if modeTransition == expected {
-      modeTransition = nil
+  private func beginQueuedSafetyTransition(_ transition: ModeTransition) async {
+    guard modeTransition != nil || !queuedSafetyTransitions.isEmpty else {
+      modeTransition = transition
+      return
     }
+    // Once accepted, a safety-decreasing request runs even if its caller is
+    // cancelled. Abandoning this continuation could strand an owned lease or
+    // assertion after the transition ahead of it completes.
+    await withCheckedContinuation { continuation in
+      queuedSafetyTransitions.append(
+        QueuedModeTransition(
+          transition: transition,
+          continuation: continuation
+        )
+      )
+    }
+  }
+
+  func queuedSafetyTransitionCountForTesting() -> Int {
+    queuedSafetyTransitions.count
+  }
+
+  private func releaseModeTransition(_ expected: ModeTransition) {
+    guard modeTransition == expected else { return }
+    guard !queuedSafetyTransitions.isEmpty else {
+      modeTransition = nil
+      return
+    }
+    let next = queuedSafetyTransitions.removeFirst()
+    modeTransition = next.transition
+    next.continuation.resume()
   }
 
   private func recoverConfigurationIfNeeded() async throws {
