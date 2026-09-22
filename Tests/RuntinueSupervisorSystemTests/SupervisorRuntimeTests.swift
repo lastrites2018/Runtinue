@@ -1289,7 +1289,7 @@ private actor RuntimeFakePowerAssertionBackend: UserPowerAssertionBackend {
   private var readbackConfirmed = true
   private var releaseFails = false
 
-  func acquire(reason: String) async throws -> UserPowerAssertionToken {
+  func acquire(reason: String, deadline: MonotonicInstant) async throws -> UserPowerAssertionToken {
     acquireCount += 1
     let token = UserPowerAssertionToken(rawValue: UInt32(acquireCount))
     active = token
