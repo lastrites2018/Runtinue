@@ -1,0 +1,232 @@
+name: Release candidate
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-candidate-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  source-contract:
+    name: tagged-source-contract
+    runs-on: macos-15
+    timeout-minutes: 15
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      tag: ${{ steps.source.outputs.tag }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.ref }}
+      - name: 고정 태그와 공개 소스 계약 확인
+        id: source
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_TYPE}" = tag
+          test "${GITHUB_REF}" = "refs/tags/${GITHUB_REF_NAME}"
+          REQUESTED_TAG="$GITHUB_REF_NAME"
+          [[ "$REQUESTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          version="$(./scripts/version.sh)"
+          test "$REQUESTED_TAG" = "v$version"
+          commit="$(git rev-parse --verify HEAD^{commit})"
+          tagged_commit="$(git rev-parse --verify "refs/tags/$REQUESTED_TAG^{commit}")"
+          test "$commit" = "$tagged_commit"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          test "$(./scripts/version.sh --release)" = "$version"
+          ./scripts/verify-public-tree.sh --history "$commit"
+          ./scripts/test-public-boundary.sh
+          {
+            echo "commit=$commit"
+            echo "tag=$REQUESTED_TAG"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+  release-tests:
+    name: release-mode-tests
+    needs: source-contract
+    runs-on: macos-15
+    timeout-minutes: 30
+    outputs:
+      tested-commit: ${{ steps.release-tests.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-contract.outputs.commit }}
+      - name: 동일 태그 소스 확인
+        env:
+          EXPECTED_COMMIT: ${{ needs.source-contract.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_COMMIT"
+          ./scripts/version.sh --release >/dev/null
+      - name: release 설정과 배포 입력 gate 검사
+        id: release-tests
+        env:
+          EXPECTED_COMMIT: ${{ needs.source-contract.outputs.commit }}
+        run: |
+          set -euo pipefail
+          swift test -c release --disable-sandbox
+          ./scripts/test-release-tools.sh
+          ./scripts/test-install-preflight.sh
+          ./scripts/test-version.sh
+          ./scripts/test-hardware-validation.sh
+          echo "commit=$EXPECTED_COMMIT" >> "$GITHUB_OUTPUT"
+
+  signed-notarized-candidate:
+    name: signed-notarized-candidate
+    needs:
+      - source-contract
+      - release-tests
+    environment: release-candidate
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.source-contract.outputs.commit }}
+      - name: 서명 전 고정 소스와 테스트 계약 재확인
+        env:
+          EXPECTED_COMMIT: ${{ needs.source-contract.outputs.commit }}
+          TESTED_COMMIT: ${{ needs.release-tests.outputs.tested-commit }}
+          EXPECTED_VERSION: ${{ needs.source-contract.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --verify HEAD^{commit})" = "$EXPECTED_COMMIT"
+          test "$TESTED_COMMIT" = "$EXPECTED_COMMIT"
+          test "$(./scripts/version.sh --release)" = "$EXPECTED_VERSION"
+      - name: 자격 증명 가져오기와 서명·공증 후보 생성
+        env:
+          APPLICATION_CERTIFICATE_P12_BASE64: ${{ secrets.RUNTINUE_APPLICATION_CERTIFICATE_P12_BASE64 }}
+          APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.RUNTINUE_APPLICATION_CERTIFICATE_PASSWORD }}
+          INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.RUNTINUE_INSTALLER_CERTIFICATE_P12_BASE64 }}
+          INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.RUNTINUE_INSTALLER_CERTIFICATE_PASSWORD }}
+          NOTARY_API_KEY_P8_BASE64: ${{ secrets.RUNTINUE_NOTARY_API_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.RUNTINUE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.RUNTINUE_NOTARY_ISSUER_ID }}
+          DEVELOPER_ID_APPLICATION: ${{ vars.RUNTINUE_DEVELOPER_ID_APPLICATION }}
+          DEVELOPER_ID_INSTALLER: ${{ vars.RUNTINUE_DEVELOPER_ID_INSTALLER }}
+          EXPECTED_COMMIT: ${{ needs.source-contract.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.source-contract.outputs.version }}
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+
+          for name in \
+            APPLICATION_CERTIFICATE_P12_BASE64 APPLICATION_CERTIFICATE_PASSWORD \
+            INSTALLER_CERTIFICATE_P12_BASE64 INSTALLER_CERTIFICATE_PASSWORD \
+            NOTARY_API_KEY_P8_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID \
+            DEVELOPER_ID_APPLICATION DEVELOPER_ID_INSTALLER; do
+            test -n "${!name:-}" || {
+              echo "release-candidate environment prerequisite is missing: $name" >&2
+              exit 64
+            }
+          done
+          signing_root="$RUNNER_TEMP/runtinue-signing-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          keychain_path="$signing_root/signing.keychain-db"
+          application_p12="$signing_root/application.p12"
+          installer_p12="$signing_root/installer.p12"
+          notary_key="$signing_root/AuthKey_${NOTARY_KEY_ID}.p8"
+          notary_profile="runtinue-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          keychain_password="$(/usr/bin/uuidgen)$(/usr/bin/uuidgen)"
+          echo "::add-mask::$keychain_password"
+          mkdir -p "$signing_root"
+
+          cleanup() {
+            /usr/bin/security delete-keychain "$keychain_path" >/dev/null 2>&1 || true
+            /bin/rm -rf -- "$signing_root"
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$APPLICATION_CERTIFICATE_P12_BASE64" | /usr/bin/base64 --decode > "$application_p12"
+          printf '%s' "$INSTALLER_CERTIFICATE_P12_BASE64" | /usr/bin/base64 --decode > "$installer_p12"
+          printf '%s' "$NOTARY_API_KEY_P8_BASE64" | /usr/bin/base64 --decode > "$notary_key"
+          /usr/bin/security create-keychain -p "$keychain_password" "$keychain_path"
+          /usr/bin/security set-keychain-settings -lut 7200 "$keychain_path"
+          /usr/bin/security unlock-keychain -p "$keychain_password" "$keychain_path"
+          /usr/bin/security import "$application_p12" -k "$keychain_path" \
+            -P "$APPLICATION_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -x
+          /usr/bin/security import "$installer_p12" -k "$keychain_path" \
+            -P "$INSTALLER_CERTIFICATE_PASSWORD" -T /usr/bin/productbuild -x
+          /usr/bin/security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$keychain_password" "$keychain_path" >/dev/null
+          /usr/bin/security list-keychains -d user -s "$keychain_path"
+          /usr/bin/security find-certificate -c "$DEVELOPER_ID_APPLICATION" "$keychain_path" >/dev/null
+          /usr/bin/security find-certificate -c "$DEVELOPER_ID_INSTALLER" "$keychain_path" >/dev/null
+          /usr/bin/xcrun notarytool store-credentials "$notary_profile" \
+            --key "$notary_key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            --keychain "$keychain_path"
+
+          /bin/rm -f -- "$application_p12" "$installer_p12" "$notary_key"
+          unset APPLICATION_CERTIFICATE_P12_BASE64 APPLICATION_CERTIFICATE_PASSWORD
+          unset INSTALLER_CERTIFICATE_P12_BASE64 INSTALLER_CERTIFICATE_PASSWORD
+          unset NOTARY_API_KEY_P8_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID
+          test ! -e "$application_p12" && test ! -e "$installer_p12" && test ! -e "$notary_key"
+
+          candidate_root="$GITHUB_WORKSPACE/.release/candidate"
+          RUNTINUE_RELEASE_ROOT="$candidate_root" \
+          BUILD_NUMBER="$GITHUB_RUN_NUMBER" \
+          NOTARY_KEYCHAIN_PROFILE="$notary_profile" \
+          NOTARY_KEYCHAIN_PATH="$keychain_path" \
+            ./scripts/release.sh --candidate-only
+
+          package="$candidate_root/Runtinue-$EXPECTED_VERSION.pkg"
+          manifest="$package.manifest.json"
+          checksum="$package.sha256"
+          ./scripts/release-manifest.sh verify "$package" "$manifest"
+          (cd "$candidate_root" && /usr/bin/shasum -a 256 -c "${checksum##*/}")
+          test "$(/usr/bin/plutil -extract kind raw "$manifest")" = release
+          test "$(/usr/bin/plutil -extract package.signatureStatus raw "$manifest")" = signed-notarized
+          test "$(/usr/bin/plutil -extract source.commitSHA raw "$manifest")" = "$EXPECTED_COMMIT"
+          test "$(/usr/bin/plutil -extract source.workingTreeState raw "$manifest")" = clean
+
+          package_sha="$(/usr/bin/plutil -extract package.sha256 raw "$manifest")"
+          artifact_root="$RUNNER_TEMP/runtinue-candidate-artifact"
+          test ! -e "$artifact_root"
+          /bin/mkdir -p "$artifact_root"
+          /bin/cp -p -- "$package" "$manifest" "$checksum" "$artifact_root/"
+          /usr/bin/cmp -s "$package" "$artifact_root/${package##*/}"
+          /usr/bin/cmp -s "$manifest" "$artifact_root/${manifest##*/}"
+          /usr/bin/cmp -s "$checksum" "$artifact_root/${checksum##*/}"
+          artifact_count="$(/bin/ls -1A "$artifact_root" | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+          test "$artifact_count" = 3
+          staged_package="$artifact_root/${package##*/}"
+          staged_manifest="$artifact_root/${manifest##*/}"
+          ./scripts/release-manifest.sh verify "$staged_package" "$staged_manifest"
+          (cd "$artifact_root" && /usr/bin/shasum -a 256 -c "${checksum##*/}")
+          cleanup
+          trap - EXIT
+          {
+            echo "### Signed and notarized release candidate"
+            echo "- Tag: ${{ needs.source-contract.outputs.tag }}"
+            echo "- Commit: $EXPECTED_COMMIT"
+            echo "- Package SHA-256: $package_sha"
+            echo "- GitHub Release: not created"
+            echo "- Publish gate: complete and verify a hardware record bound to this manifest, then explicitly publish from the same clean tagged checkout."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 검증된 후보 보관
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Runtinue-${{ needs.source-contract.outputs.version }}-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/runtinue-candidate-artifact/Runtinue-${{ needs.source-contract.outputs.version }}.pkg
+            ${{ runner.temp }}/runtinue-candidate-artifact/Runtinue-${{ needs.source-contract.outputs.version }}.pkg.manifest.json
+            ${{ runner.temp }}/runtinue-candidate-artifact/Runtinue-${{ needs.source-contract.outputs.version }}.pkg.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+          include-hidden-files: false
