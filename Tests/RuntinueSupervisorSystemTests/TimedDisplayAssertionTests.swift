@@ -754,8 +754,10 @@ private final class RecordingIOPMCalls: @unchecked Sendable {
         defer { lock.unlock() }
         readbacks.append(id)
         guard let creation = assertions[id] else { return nil }
-        // Default readback is derived from the actual production create call.
-        let level = effectIsActive(creation) ? creation.level : IOPMAssertionLevel(kIOPMAssertionLevelOff)
+        // macOS can move a timed-out TurnOff assertion to its inactive set while
+        // CopyProperties still returns the level captured at creation. Keep the
+        // stored property and model the effective state separately below.
+        let level = creation.level
         var properties: [String: Any] = [
           kIOPMAssertionTypeKey as String: creation.type,
           kIOPMAssertionLevelKey as String: NSNumber(value: level),
