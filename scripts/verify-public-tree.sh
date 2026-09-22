@@ -22,7 +22,8 @@ fail() {
 printf '%s\0' \
   'notes.md' 'README.MD' 'nested/README.md' 'Sources/notes.Md' \
   'docs/private.swift' 'AGENTS.MD' 'agents.md' 'nested/AGENTS.md' \
-  '.env' '.release/output.swift' \
+  '.env' '.release/output.swift' 'candidate.hardware.json' \
+  '.release/candidate.hardware.json' \
   'private.log' 'private.jsonl' 'private.pdf' 'private.txt' \
   'private.docx' 'private.png' 'private.p12' 'Sources/private.json' \
   'READMEAssets/private.png' 'READMEAssets/private.gif' \

@@ -265,6 +265,10 @@ expect_exit 64 /usr/bin/env \
 expect_exit 64 /usr/bin/env \
   -u RUNTINUE_EXPECTED_MANIFEST -u RUNTINUE_EXPECTED_PKG -u RUNTINUE_EXPECTED_SHA256 \
   RUNTINUE_ALLOW_POWER_MUTATION=YES "${script_dir}/integration-test.sh"
+expect_exit 64 /usr/bin/env \
+  -u RUNTINUE_EXPECTED_MANIFEST -u RUNTINUE_EXPECTED_PKG -u RUNTINUE_EXPECTED_SHA256 \
+  RUNTINUE_ALLOW_POWER_MUTATION=YES \
+  "${script_dir}/integration-test.sh" --timed-assertion-timeout
 print "실제 전원 검증의 고정 artifact 필수 gate 통과"
 
 expect_exit 64 /usr/bin/env \

@@ -355,7 +355,29 @@ swift run --disable-sandbox runtinue diagnose
 ./scripts/test-public-boundary.sh
 ```
 
-자동화 검사는 실제 MacBook의 발열 안전성, 덮개 닫힘 동작과 이동 중 작업 지속을 증명하지 않습니다. 실기기 검증 기록은 고정된 패키지 SHA-256과 커밋에 연결해야 하며, 실행하지 않은 항목은 `notRun`으로 남겨야 합니다.
+자동화 검사는 실제 MacBook의 발열 안전성, 덮개 닫힘 동작과 이동 중 작업 지속을 증명하지 않습니다. 실기기 검증 기록은 고정된 manifest, 실제 패키지 SHA-256과 커밋에 연결해야 하며, 실행하지 않은 항목은 `notRun`으로 남겨야 합니다.
+
+`scripts/hardware-validation.sh`는 case별 시작·종료 UTC 시각, Mac 모델과 macOS 버전,
+시작·종료 `SleepDisabled`, manifest·후보 및 runner SHA-256을 자동 기록합니다. 기존 case를
+덮어쓰지 않으며 manifest와 실제 패키지 바이트가 다르면 시작하지 않습니다.
+
+```sh
+./scripts/hardware-validation.sh create \
+  "$runtinue_manifest" "$runtinue_package" "$runtinue_package.hardware.json"
+./scripts/hardware-validation.sh cases
+./scripts/hardware-validation.sh describe cleanInstall
+./scripts/hardware-validation.sh verify \
+  "$runtinue_manifest" "$runtinue_package" "$runtinue_package.hardware.json"
+```
+
+전원 상태를 바꾸거나 사람이 수행하는 단계는 manifest·후보 SHA와 case가 들어간 `token`을 먼저
+출력하고, 실험자가 그 전체 문자열을 `--confirm`에 다시 제공해야 시작 또는 완료할 수
+있습니다. 모든 case는 `run` 또는 `begin` 토큰을 만들기 전에 반드시 `describe <case>`의
+안전 전제·최소 절차·통과 기준을 확인하십시오. 수동 case는 `begin` 전에도 같은 설명을
+다시 확인해야 합니다. 조건을 안전하게 준비할 수 없으면 해당 case를 `notRun`으로 남겨
+배포를 보류해야 합니다. 실제 설치와 전원 변경은 명시적으로 동의하고 안전한 시험 환경을
+준비한 경우에만 수행하십시오. 생성되는 `*.hardware.json`은 로컬 증거이며 저장소에
+커밋하지 않습니다. 자세한 실행 계약은 [AGENTS.md](AGENTS.md)를 따릅니다.
 
 ## 라이선스
 

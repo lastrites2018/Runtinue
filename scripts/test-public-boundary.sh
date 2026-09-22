@@ -84,7 +84,8 @@ expect_success '정상 로컬 푸시 훅' git -C "$fixture" push --quiet origin 
 for path in \
   'notes.md' 'Notes.MD' 'nested/README.md' 'nested/AGENTS.md' \
   'docs/notes.swift' 'notes.txt' 'report.pdf' 'report.docx' 'report.rst' \
-  'events.jsonl' '.env' '.release/result.swift' 'Sources/notes.md' \
+  'events.jsonl' '.env' 'candidate.hardware.json' \
+  '.release/candidate.hardware.json' '.release/result.swift' 'Sources/notes.md' \
   'Sources/session.json' '.github/workflows/private.yml' 'image.png' \
   'READMEAssets/private.png' 'READMEAssets/private.gif' \
   'READMEAssets/session.json' \
