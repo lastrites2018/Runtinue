@@ -5,13 +5,34 @@ script_dir=${0:A:h}
 project_root=${script_dir:h}
 release_root=${RUNTINUE_RELEASE_ROOT:-"${project_root}/.release"}
 release_root=${release_root:A}
+candidate_only=NO
+
+usage() {
+  print -u2 "사용법: release.sh [--candidate-only]"
+  exit 64
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --candidate-only)
+      candidate_only=YES
+      shift
+      ;;
+    *) usage ;;
+  esac
+done
+
 version=$(/bin/zsh "${script_dir}/version.sh" --release)
 notary_profile=${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE을 지정해야 합니다}
 pkg="${release_root}/Runtinue-${version}.pkg"
 
 swift test --package-path "${project_root}" -c release --disable-sandbox
 "${script_dir}/package.sh"
-/usr/bin/xcrun notarytool submit "${pkg}" --keychain-profile "${notary_profile}" --wait
+notary_arguments=(--keychain-profile "${notary_profile}")
+if [[ -n "${NOTARY_KEYCHAIN_PATH:-}" ]]; then
+  notary_arguments+=(--keychain "${NOTARY_KEYCHAIN_PATH}")
+fi
+/usr/bin/xcrun notarytool submit "${pkg}" "${notary_arguments[@]}" --wait
 /usr/bin/xcrun stapler staple "${pkg}"
 /usr/bin/xcrun stapler validate "${pkg}"
 /usr/sbin/spctl -a -vv -t install "${pkg}"
@@ -36,6 +57,10 @@ else
 fi
 
 print "공증과 staple이 완료된 후보 패키지: ${pkg}"
+if [[ "${candidate_only}" == YES ]]; then
+  print "후보 전용 실행 완료. 실기기 기록 검증과 명시적 publish 전에는 배포 포인터를 만들지 않습니다"
+  exit 0
+fi
 RUNTINUE_NOTARIZATION_VERIFIED=YES \
   "${script_dir}/release-manifest.sh" publish \
     "${pkg}" "${manifest}" "${project_root}/.release/Runtinue-latest.json"

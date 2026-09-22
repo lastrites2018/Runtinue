@@ -67,12 +67,45 @@ Runtinue는 회사와 집 사이를 이동하는 동안 휴대전화 핫스팟 �
 
 - 루트의 `VERSION`을 앱, 패키지, manifest에 적용하는 단일 버전 기준으로 사용합니다. `VERSION` 환경 변수로 다른 버전을 주입하지 않습니다.
 - 빌드는 `Info.plist`와 manifest에 소스 커밋과 작업 트리 상태를 기록합니다. 커밋되지 않은 변경이 있는 개발 패키지는 패키지와 manifest의 SHA-256을 함께 보관합니다.
-- GitHub Actions는 arm64 `macos-15` 실행기에서 디버그 테스트를 수행합니다. 명시적인 배포 절차는 release 설정 테스트와 후보 패키지의 설치 및 rollback gate를 추가로 실행합니다. CI 성공은 패키지 설치, 공증, 실기기 안전성과 실제 통근 여정을 증명하지 않습니다.
+- GitHub Actions의 `Repository checks`는 arm64 `macos-15` 실행기에서 디버그 테스트를 수행합니다. `Release candidate` workflow는 고정 태그에서 release 설정 테스트와 서명·공증된 후보 패키지의 manifest 및 checksum 검증을 별도 계약으로 수행합니다. 어느 workflow의 성공도 패키지 설치, 실기기 안전성과 실제 통근 여정을 증명하지 않습니다.
 - 기능 브랜치 변경은 PR에서 검증합니다. `push` trigger는 main과 tag처럼 필요한 ref를 명시해 같은 커밋의 중복 실행을 막습니다.
 - PR에는 병합 판단에 필요한 검사를 둡니다. 배포 빌드와 패키지 검증은 명시적인 배포 절차에서 실행하며, 상시 자동화가 필요한 근거가 확인된 경우에만 main, tag 또는 수동 workflow에 배치합니다.
 - 새 workflow나 job에는 기존 검사와 구분되는 결과 계약이 있어야 합니다. 같은 계약을 반복하거나 실행 시점만 다른 경우에는 기존 workflow의 trigger와 조건을 조정합니다.
 - 정식 배포에는 깨끗한 작업 트리와 현재 커밋을 가리키는 `v$(./scripts/version.sh)` 태그가 필요합니다. Developer ID 서명, 공증, 티켓 첨부, 실기기 검증 기록을 모두 확인한 뒤에만 배포 포인터(release pointer)를 게시합니다.
 - 개발 패키지 포인터는 정식 배포 승인을 뜻하지 않으며 GitHub Release를 자동으로 만들지 않습니다.
+
+### GitHub release 후보 workflow
+
+`.github/workflows/release-candidate.yml`은 정확한 `vMAJOR.MINOR.PATCH` 태그 push 또는 GitHub Actions에서 그 태그 ref를 직접 선택한 수동 실행에서만 동작합니다. 브랜치 ref에서 수동 실행하면 source contract가 서명 단계 전에 거부합니다. 일반 PR과 main 검사는 이 workflow를 실행하지 않으며, 기존 `Repository checks`도 태그에서 중복 실행하지 않습니다.
+
+서명 job은 GitHub의 보호된 `release-candidate` environment를 사용합니다. 태그와 diff를 검토하는 필수 승인자를 설정하고 다음 secret과 variable을 environment에만 등록합니다.
+
+- Secrets: `RUNTINUE_APPLICATION_CERTIFICATE_P12_BASE64`, `RUNTINUE_APPLICATION_CERTIFICATE_PASSWORD`, `RUNTINUE_INSTALLER_CERTIFICATE_P12_BASE64`, `RUNTINUE_INSTALLER_CERTIFICATE_PASSWORD`, `RUNTINUE_NOTARY_API_KEY_P8_BASE64`, `RUNTINUE_NOTARY_KEY_ID`, `RUNTINUE_NOTARY_ISSUER_ID`
+- Variables: `RUNTINUE_DEVELOPER_ID_APPLICATION`, `RUNTINUE_DEVELOPER_ID_INSTALLER`
+
+P12와 App Store Connect API key는 각각 원본 파일 전체를 base64로 인코딩한 값이어야 합니다. Application과 Installer 인증서는 서로 분리하며, workflow는 import 직후 원본 P12/P8 파일과 환경 변수를 제거하고 임시 keychain도 job 종료 전에 삭제합니다. workflow와 action은 `contents: read`만 사용하고 Node 24 기반 action commit을 고정하며 GitHub Release를 만들 권한을 갖지 않습니다.
+
+workflow artifact는 공증되고 staple된 package, package에 고정된 manifest와 SHA-256 sidecar만 포함하는 14일 보관 후보입니다. `--candidate-only` 경로는 release pointer와 GitHub Release를 만들지 않습니다. 후보를 받은 뒤 대상 Mac에서 다음 순서로 실기기 기록을 만들고 모든 필수 시험을 실제로 수행해야 합니다.
+
+```sh
+./scripts/hardware-validation.sh create \
+  "$runtinue_manifest" "$runtinue_package" "$runtinue_package.hardware.json"
+./scripts/hardware-validation.sh cases
+# 각 case마다 describe를 확인하고 token이 요구하는 run 또는 begin/finish 경로만 사용합니다.
+./scripts/hardware-validation.sh describe cleanInstall
+./scripts/hardware-validation.sh verify \
+  "$runtinue_manifest" "$runtinue_package" "$runtinue_package.hardware.json"
+```
+
+같은 태그를 checkout한 깨끗한 저장소에서 아래 gate가 통과해야만 로컬 release pointer를 만들 수 있습니다.
+
+```sh
+RUNTINUE_VALIDATION_RECORD="$runtinue_package.hardware.json" \
+  ./scripts/release-manifest.sh publish \
+    "$runtinue_package" "$runtinue_manifest" ".release/Runtinue-latest.json"
+```
+
+현재 저장소에는 이 gate 뒤 GitHub Release를 게시하는 자동 권한이나 절차가 없습니다. 후보, manifest, checksum, 실기기 기록과 pointer를 다시 검토한 관리자가 별도의 명시적 승인 절차로만 GitHub Release를 게시합니다.
 
 개발 패키지를 만들 때는 저장소 내부의 새 출력 디렉터리를 사용합니다.
 

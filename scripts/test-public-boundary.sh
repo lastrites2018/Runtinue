@@ -7,6 +7,7 @@ runtinue_test_dir=$(mktemp -d "${TMPDIR:-/tmp}/runtinue-public-test.XXXXXX")
 trap 'rm -rf -- "$runtinue_test_dir"' EXIT
 fixture="$runtinue_test_dir/fixture"
 mkdir -p "$fixture/scripts" "$fixture/.githooks" \
+  "$fixture/.github/workflows" \
   "$fixture/READMEAssets" \
   "$fixture/Packaging/ko.lproj" "$fixture/Packaging/en.lproj" \
   "$fixture/Sources/RuntinueMenuBar/Resources" \
@@ -16,8 +17,12 @@ mkdir -p "$fixture/scripts" "$fixture/.githooks" \
 cp "$project_root/.gitignore" "$fixture/.gitignore"
 cp "$project_root/VERSION" "$fixture/VERSION"
 cp "$script_dir/verify-public-tree.sh" "$fixture/scripts/verify-public-tree.sh"
+cp "$script_dir/verify-github-actions.sh" "$fixture/scripts/verify-github-actions.sh"
 cp "$project_root/.githooks/pre-commit" "$fixture/.githooks/pre-commit"
 cp "$project_root/.githooks/pre-push" "$fixture/.githooks/pre-push"
+cp "$project_root/.github/workflows/checks.yml" "$fixture/.github/workflows/checks.yml"
+cp "$project_root/.github/workflows/release-candidate.yml" \
+  "$fixture/.github/workflows/release-candidate.yml"
 chmod +x "$fixture/.githooks/pre-commit" "$fixture/.githooks/pre-push"
 printf '# Fixture\n' > "$fixture/README.md"
 printf '# Fixture rules\n' > "$fixture/AGENTS.md"
@@ -48,7 +53,7 @@ git -C "$fixture" config commit.gpgsign false
 git -C "$fixture" config core.ignoreCase false
 git -C "$fixture" config core.hooksPath .githooks
 git -C "$fixture" add \
-  .gitignore AGENTS.md README.md READMEAssets VERSION Sources Tests scripts .githooks Packaging
+  .gitignore AGENTS.md README.md READMEAssets VERSION Sources Tests scripts .githooks .github Packaging
 
 passed=0
 expect_success() {
@@ -73,8 +78,53 @@ expect_failure() {
 check_fixture() {
   (cd "$fixture" && bash scripts/verify-public-tree.sh "$@")
 }
+check_workflows() {
+  (cd "$fixture" && bash scripts/verify-github-actions.sh)
+}
 
 expect_success '허용 파일 스테이징' check_fixture --staged
+expect_success 'GitHub Actions 최소 권한과 release secret 경계' check_workflows
+
+release_workflow="$fixture/.github/workflows/release-candidate.yml"
+workflow_backup="$runtinue_test_dir/release-candidate.yml"
+cp "$release_workflow" "$workflow_backup"
+sed -E 's#actions/upload-artifact@[0-9a-f]{40}#actions/upload-artifact@v4#' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure '가변 action ref 차단' check_workflows
+sed 's/contents: read/contents: write/' "$workflow_backup" > "$release_workflow"
+expect_failure 'workflow contents write 권한 차단' check_workflows
+cp "$workflow_backup" "$release_workflow"
+printf '\n  pull_request:\n' >> "$release_workflow"
+expect_failure 'PR release secret 경로 차단' check_workflows
+sed 's#./scripts/release.sh --candidate-only#./scripts/release.sh#' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure '자동 publish 가능 경로 차단' check_workflows
+cp "$workflow_backup" "$release_workflow"
+printf '\n      - run: gh release create v0.0.0\n' >> "$release_workflow"
+expect_failure 'GitHub Release 자동 게시 차단' check_workflows
+cp "$workflow_backup" "$release_workflow"
+sed 's/runs-on: macos-15/runs-on: ubuntu-latest/g' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure 'zsh 도구의 Ubuntu runner 실행 차단' check_workflows
+grep -Fv 'test "${GITHUB_REF_TYPE}" = tag' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure '수동 실행 tag ref 확인 누락 차단' check_workflows
+sed 's#./scripts/release.sh --candidate-only#./scripts/release.sh --candidate-only --tests-passed-for "$TESTED_COMMIT"#' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure 'signing job release 테스트 생략 차단' check_workflows
+sed 's#${{ runner.temp }}/runtinue-candidate-artifact/#.release/candidate/#g' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure '숨김 release 경로 artifact 업로드 차단' check_workflows
+grep -Fv '/bin/rm -f -- "$application_p12" "$installer_p12" "$notary_key"' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure '원본 signing credential 미삭제 차단' check_workflows
+sed 's/-T \/usr\/bin\/codesign -x/-T \/usr\/bin\/codesign/' \
+  "$workflow_backup" > "$release_workflow"
+expect_failure '추출 가능한 application signing key 차단' check_workflows
+sed '/^[[:space:]]*cleanup[[:space:]]*$/d' "$workflow_backup" > "$release_workflow"
+expect_failure '후보 검증 뒤 signing keychain 즉시 폐기 누락 차단' check_workflows
+cp "$workflow_backup" "$release_workflow"
+
 expect_success '정상 커밋 훅' git -C "$fixture" commit --quiet -m '공개 경계 테스트 기준 커밋'
 expect_success '정상 전체 이력' check_fixture --history HEAD
 git init --bare --quiet -b main "$runtinue_test_dir/remote.git"

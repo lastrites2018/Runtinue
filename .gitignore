@@ -31,6 +31,7 @@
 !/.githooks/pre-commit
 !/.githooks/pre-push
 !/.github/workflows/checks.yml
+!/.github/workflows/release-candidate.yml
 
 # 로컬 자료와 생성물은 하위 파일도 탐색하지 않습니다.
 .build/

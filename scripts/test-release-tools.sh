@@ -292,6 +292,14 @@ expect_exit 64 /usr/bin/env \
   "${script_dir}/build.sh"
 print "release root 경계와 rm 안전 gate 통과"
 
+expect_exit 64 "${script_dir}/release.sh" --unknown
+expect_exit 64 "${script_dir}/release.sh" --tests-passed-for \
+  0000000000000000000000000000000000000000
+expect_exit 64 "${script_dir}/release.sh" --candidate-only --tests-passed-for not-a-commit
+expect_exit 64 "${script_dir}/release.sh" --candidate-only --tests-passed-for \
+  0000000000000000000000000000000000000000
+print "release 후보 전용 인자와 테스트 생략 차단 gate 통과"
+
 expect_exit 64 /usr/bin/env \
   VERSION=0.2.0 \
   RELEASE_URL="http://example.com/Runtinue-0.2.0.pkg" \
