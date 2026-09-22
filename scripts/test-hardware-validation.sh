@@ -264,6 +264,13 @@ done
 expect_exit 0 "${harness[@]}" verify "${manifest}" "${package}" "${record}"
 /bin/cp "${record}" "${test_root}/complete.json"
 
+# 완료 기록의 모든 자동 case는 현재 승인된 integration runner 바이트와 일치해야 한다.
+/bin/cp "${script_dir}/integration-test.sh" "${test_root}/integration-test.verify-original"
+print -r -- '# changed after automated evidence' >> "${script_dir}/integration-test.sh"
+expect_exit 78 "${harness[@]}" verify "${manifest}" "${package}" "${record}"
+/bin/cp "${test_root}/integration-test.verify-original" "${script_dir}/integration-test.sh"
+/bin/chmod +x "${script_dir}/integration-test.sh"
+
 # 후보 필드가 같더라도 manifest 바이트가 바뀌면 기존 기록을 재사용할 수 없다.
 /bin/cp "${manifest}" "${test_root}/manifest.complete.json"
 /usr/bin/plutil -insert fixtureNote -string changed "${manifest}"

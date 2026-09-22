@@ -179,6 +179,36 @@ if [[ "${scenario}" == "--supervisor-crash" ]]; then
     [[ "$(sleep_state)" == "normal" ]] && break
     /bin/sleep 1
   done
+  supervisor_ready=NO
+  for _ in {1..30}; do
+    if /bin/launchctl print "gui/${UID}/io.github.lastrites2018.runtinue.supervisor" \
+      >/dev/null 2>&1; then
+      recovered_status=$("${cli}" status --json 2>/dev/null) || {
+        /bin/sleep 1
+        continue
+      }
+      recovered_mode=$(print -r -- "${recovered_status}" | \
+        /usr/bin/plutil -extract mode raw - 2>/dev/null) || {
+        /bin/sleep 1
+        continue
+      }
+      recovered_phase=$(print -r -- "${recovered_status}" | \
+        /usr/bin/plutil -extract phase raw - 2>/dev/null) || {
+        /bin/sleep 1
+        continue
+      }
+      if [[ "${recovered_mode}" == none && \
+        ( "${recovered_phase}" == idle || "${recovered_phase}" == ended ) ]]; then
+        supervisor_ready=YES
+        break
+      fi
+    fi
+    /bin/sleep 1
+  done
+  [[ "${supervisor_ready}" == YES ]] || {
+    print -u2 "Supervisor 종료 뒤 서비스 재기동과 응답을 확인하지 못했습니다"
+    exit 1
+  }
 elif [[ "${scenario}" == "--helper-crash" ]]; then
   /usr/bin/sudo -n /bin/launchctl kill SIGKILL system/io.github.lastrites2018.runtinue.helper
   for _ in {1..100}; do

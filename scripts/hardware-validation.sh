@@ -420,15 +420,18 @@ run_case() {
   local manifest_path=$1 package_path=$2 record_path=$3 test_case=$4 confirmation=$5
   shift 5
   (( $# >= 1 )) || fail "실행할 절대 경로 명령이 필요합니다" 64
-  local runner=${1:A} expected start_state end_state started ended start_manifest end_manifest
+  local runner_argument=$1 runner=${1:A} expected start_state end_state started ended start_manifest end_manifest
+  local -a runner_arguments
+  runner_arguments=("${@:2}")
   local start_package end_package start_runner end_runner runner_status=0 final_status result
   [[ ! -L "${record_path}" ]] || fail "실기기 기록 경로는 심볼릭 링크일 수 없습니다" 66
   local record=${record_path:A}
-  [[ "$1" == /* && -f "$1" && ! -L "$1" && -x "$1" ]] || \
+  [[ "${runner_argument}" == /* && -f "${runner_argument}" && \
+    ! -L "${runner_argument}" && -x "${runner_argument}" ]] || \
     fail "runner는 실행 가능한 일반 파일의 절대 경로여야 합니다" 66
   load_candidate "${manifest_path}" "${package_path}"
   valid_case "${test_case}" || fail "알 수 없는 시험 항목: ${test_case}" 64
-  validate_runner_for_case "${test_case}" "$@"
+  validate_runner_for_case "${test_case}" "${runner}" "${runner_arguments[@]}"
   start_manifest=${manifest_sha}
   start_package=$(sha256 "${package}")
   start_runner=$(sha256 "${runner}")
@@ -461,7 +464,7 @@ run_case() {
     RUNTINUE_EXPECTED_MANIFEST="${manifest}" \
     RUNTINUE_EXPECTED_PKG="${package}" \
     RUNTINUE_EXPECTED_SHA256="${package_sha}" \
-    "$@" || runner_status=$?
+    "${runner}" "${runner_arguments[@]}" || runner_status=$?
 
   ended=$(utc_now)
   end_state=$(sleep_disabled)
@@ -492,7 +495,7 @@ run_case() {
 
 verify_record() {
   local record_path=$3 record test_case model macos_version created created_epoch now_epoch case_status mode started ended
-  local start_epoch end_epoch result runner_name start_runner end_runner
+  local start_epoch end_epoch result runner_name start_runner end_runner approved_runner approved_runner_sha
   [[ ! -L "${record_path}" ]] || fail "실기기 기록 경로는 심볼릭 링크일 수 없습니다" 66
   load_candidate "$1" "$2"
   record=${record_path:A}
@@ -506,6 +509,10 @@ verify_record() {
   now_epoch=$(/bin/date +%s)
   created_epoch=$(timestamp_epoch "${created}") || fail "기록 생성 시간 오류"
   (( created_epoch <= now_epoch )) || fail "기록 생성 시간이 미래입니다"
+  approved_runner="${hardware_script_dir}/integration-test.sh"
+  [[ -f "${approved_runner}" && ! -L "${approved_runner}" && -x "${approved_runner}" ]] || \
+    fail "검증에 사용할 고정 integration-test.sh runner가 필요합니다" 66
+  approved_runner_sha=$(sha256 "${approved_runner}") || fail "runner SHA-256을 계산하지 못했습니다" 69
   for test_case in "${required_cases[@]}"; do
     case_status=$(value "${record}" "tests.${test_case}.status")
     mode=$(value "${record}" "tests.${test_case}.executionMode")
@@ -542,7 +549,8 @@ verify_record() {
     if [[ "${mode}" == automated ]]; then
       [[ "${result}" == 'Automated runner exited 0; manifest, candidate, runner and SleepDisabled remained unchanged' && \
         "${runner_name}" =~ '^[A-Za-z0-9._-]{1,128}$' && \
-        "${start_runner}" =~ '^[0-9a-f]{64}$' && "${end_runner}" == "${start_runner}" ]] || \
+        "${start_runner}" == "${approved_runner_sha}" && \
+        "${end_runner}" == "${approved_runner_sha}" ]] || \
         fail "자동 runner 증거 오류: ${test_case}" 78
     else
       [[ "${result}" == 'Operator confirmed the documented manual procedure passed' && \
