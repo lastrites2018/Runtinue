@@ -82,13 +82,39 @@ runtinue_package_dir=$(mktemp -d "$PWD/.release/development.XXXXXX")
 RUNTINUE_RELEASE_ROOT="$runtinue_package_dir" ./scripts/package-development.sh
 ```
 
-실기기 검증 기록은 고정된 manifest와 패키지에 연결합니다.
+실기기 검증 기록은 고정된 manifest와 실제 패키지 바이트에 연결합니다. 기록 파일은
+로컬 검증 산출물이며 커밋하지 않습니다. `create`, `token`, 각 시험과 `verify` 사이에
+패키지를 교체하지 않습니다.
 
 ```sh
 ./scripts/hardware-validation.sh create \
-  "$runtinue_manifest" "$runtinue_package.hardware.json"
+  "$runtinue_manifest" "$runtinue_package" "$runtinue_package.hardware.json"
+./scripts/hardware-validation.sh cases
+./scripts/hardware-validation.sh describe cleanInstall
 ./scripts/hardware-validation.sh verify \
-  "$runtinue_manifest" "$runtinue_package.hardware.json"
+  "$runtinue_manifest" "$runtinue_package" "$runtinue_package.hardware.json"
+```
+
+전원 상태를 바꾸는 자동 시험은 사용자가 해당 후보와 case를 확인한 뒤 `token`
+출력을 직접 다시 입력한 경우에만 `run`으로 시작합니다. 예를 들어 유한 open-lid
+assertion 시험은 `timedAssertionExpiry` case와
+`scripts/integration-test.sh --timed-assertion-timeout`을 사용합니다. 설치·인증 준비와
+명시적 동의 없이 이 명령을 실행하지 않습니다. 모든 case는 `run` 또는 `begin` 토큰을
+만들기 전에 `describe <case>`의 안전 전제·최소 절차·통과 기준을 먼저 확인합니다.
+자동화되지 않은 항목은 `begin` 전에 begin 토큰을 확인하고, 실제 절차가 끝난 뒤
+`finish passed|failed` 토큰을 확인합니다. `describe`에 적힌 조건을 안전하게 만들 수
+없는 case는 실행하거나 통과 처리하지 않고 `notRun`으로 남깁니다.
+실패하거나 중단된 case는 같은 기록에서 덮어쓰지 않고 새 기록으로 다시 시작합니다.
+
+```sh
+# 출력된 manifest/package/runner SHA를 확인한 뒤 전체 토큰을 직접 복사합니다.
+./scripts/hardware-validation.sh token \
+  "$runtinue_manifest" "$runtinue_package" timedAssertionExpiry run
+
+./scripts/hardware-validation.sh run \
+  "$runtinue_manifest" "$runtinue_package" "$runtinue_package.hardware.json" \
+  timedAssertionExpiry --confirm '<token 명령의 전체 출력>' -- \
+  "$PWD/scripts/integration-test.sh" --timed-assertion-timeout
 ```
 
 ## PR

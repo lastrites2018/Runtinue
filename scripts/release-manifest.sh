@@ -522,7 +522,8 @@ publish_pointer() {
       fail "release 후보가 현재 태그의 깨끗한 소스에서 빌드되지 않았습니다" 65
     [[ -n "${validation_record}" ]] || \
       fail "공증 후보 생성 완료. RUNTINUE_VALIDATION_RECORD에 실기기 기록을 지정하기 전에는 배포하지 않습니다" 78
-    /bin/zsh "${script_dir}/hardware-validation.sh" verify "${manifest}" "${validation_record}"
+    /bin/zsh "${script_dir}/hardware-validation.sh" verify \
+      "${manifest}" "${pkg}" "${validation_record}"
   fi
 
   local work_root pointer_plist tmp manifest_hash package_hash

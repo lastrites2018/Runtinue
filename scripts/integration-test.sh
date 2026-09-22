@@ -7,9 +7,10 @@ if [[ "${RUNTINUE_ALLOW_POWER_MUTATION:-NO}" != "YES" ]]; then
 fi
 
 if [[ "$#" -gt 1 || \
-  ( "$#" -eq 1 && "$1" != "--supervisor-crash" && "$1" != "--helper-crash" )
+  ( "$#" -eq 1 && "$1" != "--supervisor-crash" && "$1" != "--helper-crash" && \
+    "$1" != "--timed-assertion-timeout" )
 ]]; then
-  print -u2 "사용법: integration-test.sh [--supervisor-crash|--helper-crash]"
+  print -u2 "사용법: integration-test.sh [--supervisor-crash|--helper-crash|--timed-assertion-timeout]"
   exit 64
 fi
 scenario=${1:-normal}
@@ -69,7 +70,18 @@ sleep_state() {
   fi
 }
 
+desk_assertion_active() {
+  /usr/bin/pmset -g assertions 2>/dev/null | \
+    /usr/bin/grep -Fq 'Runtinue desk mode'
+}
+
+supervisor_stopped=NO
 cleanup() {
+  if [[ "${supervisor_stopped}" == YES ]]; then
+    /bin/launchctl kill SIGCONT "gui/${UID}/io.github.lastrites2018.runtinue.supervisor" \
+      >/dev/null 2>&1 || true
+    supervisor_stopped=NO
+  fi
   "${cli}" desk disable >/dev/null 2>&1 || true
   "${cli}" adaptive disable >/dev/null 2>&1 || true
   "${cli}" stop >/dev/null 2>&1 || true
@@ -83,13 +95,73 @@ cleanup() {
   print -u2 "테스트 시작 전 SleepDisabled가 정상 상태가 아님"
   exit 70
 }
+if [[ "${scenario}" == "--timed-assertion-timeout" ]] && desk_assertion_active; then
+  print -u2 "테스트 시작 전 기존 Runtinue desk assertion이 남아 있습니다"
+  exit 70
+fi
 
 print "통합 검증 대상 SHA-256: ${actual_sha}"
 print "시나리오: ${scenario}, 시작: $(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
 /bin/launchctl print system/io.github.lastrites2018.runtinue.helper >/dev/null
 trap cleanup EXIT
+trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+if [[ "${scenario}" == "--timed-assertion-timeout" ]]; then
+  # 덮개가 열린 경로의 process-owned assertion이 Supervisor 정지 중에도 유한한지
+  # 확인한다. 현재 구현이 운영체제 timeout을 설정하지 않으면 이 시험은 실패해야 한다.
+  "${cli}" desk enable --max 15s
+  for _ in {1..20}; do
+    desk_assertion_active && break
+    /bin/sleep 1
+  done
+  desk_assertion_active || {
+    print -u2 "Runtinue desk assertion 활성화를 확인하지 못함"
+    exit 1
+  }
+  [[ "$(sleep_state)" == "normal" ]] || {
+    print -u2 "열린 덮개 assertion이 시스템 SleepDisabled를 변경했습니다"
+    exit 1
+  }
+  /bin/launchctl kill SIGSTOP "gui/${UID}/io.github.lastrites2018.runtinue.supervisor"
+  supervisor_stopped=YES
+  for _ in {1..45}; do
+    desk_assertion_active || break
+    /bin/sleep 1
+  done
+  desk_assertion_active && {
+    print -u2 "Supervisor 정지 중 유한 assertion이 운영체제 기한 안에 만료되지 않았습니다"
+    exit 1
+  }
+  /bin/launchctl kill SIGCONT "gui/${UID}/io.github.lastrites2018.runtinue.supervisor"
+  supervisor_stopped=NO
+  for _ in {1..30}; do
+    timed_status=$("${cli}" status --json 2>/dev/null) || {
+      /bin/sleep 1
+      continue
+    }
+    timed_phase=$(print -r -- "${timed_status}" | /usr/bin/plutil -extract phase raw - 2>/dev/null) || {
+      /bin/sleep 1
+      continue
+    }
+    [[ "${timed_phase}" == idle || "${timed_phase}" == ended ]] && break
+    /bin/sleep 1
+  done
+  [[ "${timed_phase:-unknown}" == idle || "${timed_phase:-unknown}" == ended ]] || {
+    print -u2 "Supervisor 재개 뒤 유한 session이 종료 상태로 정리되지 않았습니다"
+    exit 1
+  }
+  [[ "$(sleep_state)" == "normal" ]] || {
+    print -u2 "유한 assertion 시험 뒤 정상 수면 상태가 아닙니다"
+    exit 1
+  }
+  trap - EXIT HUP INT TERM
+  print "Supervisor 정지 중 유한 open-lid assertion 만료 검증 통과"
+  print "종료: $(/bin/date -u +%Y-%m-%dT%H:%M:%SZ), SleepDisabled=No"
+  exit 0
+fi
+
 "${cli}" desk enable --max 2m --closed-lid
 for _ in {1..20}; do
   [[ "$(sleep_state)" == "disabled" ]] && break
@@ -107,6 +179,36 @@ if [[ "${scenario}" == "--supervisor-crash" ]]; then
     [[ "$(sleep_state)" == "normal" ]] && break
     /bin/sleep 1
   done
+  supervisor_ready=NO
+  for _ in {1..30}; do
+    if /bin/launchctl print "gui/${UID}/io.github.lastrites2018.runtinue.supervisor" \
+      >/dev/null 2>&1; then
+      recovered_status=$("${cli}" status --json 2>/dev/null) || {
+        /bin/sleep 1
+        continue
+      }
+      recovered_mode=$(print -r -- "${recovered_status}" | \
+        /usr/bin/plutil -extract mode raw - 2>/dev/null) || {
+        /bin/sleep 1
+        continue
+      }
+      recovered_phase=$(print -r -- "${recovered_status}" | \
+        /usr/bin/plutil -extract phase raw - 2>/dev/null) || {
+        /bin/sleep 1
+        continue
+      }
+      if [[ "${recovered_mode}" == none && \
+        ( "${recovered_phase}" == idle || "${recovered_phase}" == ended ) ]]; then
+        supervisor_ready=YES
+        break
+      fi
+    fi
+    /bin/sleep 1
+  done
+  [[ "${supervisor_ready}" == YES ]] || {
+    print -u2 "Supervisor 종료 뒤 서비스 재기동과 응답을 확인하지 못했습니다"
+    exit 1
+  }
 elif [[ "${scenario}" == "--helper-crash" ]]; then
   /usr/bin/sudo -n /bin/launchctl kill SIGKILL system/io.github.lastrites2018.runtinue.helper
   for _ in {1..100}; do
@@ -122,6 +224,6 @@ fi
   print -u2 "테스트 종료 뒤 정상 수면 복구 실패"
   exit 1
 }
-trap - EXIT INT TERM
+trap - EXIT HUP INT TERM
 print "실제 Mac 유한 lease와 정상 수면 복구 검증 통과"
 print "종료: $(/bin/date -u +%Y-%m-%dT%H:%M:%SZ), SleepDisabled=No"
