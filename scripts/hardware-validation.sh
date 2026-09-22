@@ -169,8 +169,10 @@ validate_manifest_fields() {
 }
 
 load_manifest() {
-  manifest=${1:A}
-  [[ -f "${manifest}" && ! -L "${manifest}" ]] || fail "일반 manifest 파일이 필요합니다" 66
+  local manifest_path=$1
+  [[ -f "${manifest_path}" && ! -L "${manifest_path}" ]] || \
+    fail "일반 manifest 파일이 필요합니다" 66
+  manifest=${manifest_path:A}
   manifest_sha=$(sha256 "${manifest}") || fail "manifest SHA-256을 계산하지 못했습니다" 69
   package_sha=$(value "${manifest}" package.sha256) || fail "패키지 SHA-256이 없습니다"
   package_sha=${package_sha:l}
@@ -183,9 +185,11 @@ load_manifest() {
 }
 
 load_candidate() {
+  local package_path=$2
   load_manifest "$1"
-  package=${2:A}
-  [[ -f "${package}" && ! -L "${package}" ]] || fail "일반 후보 패키지 파일이 필요합니다" 66
+  [[ -f "${package_path}" && ! -L "${package_path}" ]] || \
+    fail "일반 후보 패키지 파일이 필요합니다" 66
+  package=${package_path:A}
   actual_package_sha=$(sha256 "${package}") || fail "후보 패키지 SHA-256을 계산하지 못했습니다" 69
   [[ "${actual_package_sha}" == "${package_sha}" ]] || \
     fail "manifest와 후보 패키지 SHA-256이 일치하지 않습니다. 전원 변경을 거부합니다"
@@ -294,7 +298,9 @@ validate_runner_for_case() {
 }
 
 create_record() {
-  local record=${3:A} hardware_model hardware_macos created_at test_case record_tmp
+  local record_path=$3 hardware_model hardware_macos created_at test_case record_tmp
+  [[ ! -L "${record_path}" ]] || fail "실기기 기록 경로는 심볼릭 링크일 수 없습니다" 66
+  local record=${record_path:A}
   load_candidate "$1" "$2"
   [[ ! -e "${record}" && ! -L "${record}" ]] || fail "기존 실기기 기록을 덮어쓰지 않습니다" 73
   hardware_model=$(/usr/sbin/sysctl -n hw.model) || fail "Mac 모델을 읽지 못했습니다" 69
@@ -335,8 +341,10 @@ create_record() {
 }
 
 begin_case() {
-  local manifest_path=$1 package_path=$2 record=${3:A} test_case=$4 confirmation=$5
+  local manifest_path=$1 package_path=$2 record_path=$3 test_case=$4 confirmation=$5
   local expected start_state started
+  [[ ! -L "${record_path}" ]] || fail "실기기 기록 경로는 심볼릭 링크일 수 없습니다" 66
+  local record=${record_path:A}
   load_candidate "${manifest_path}" "${package_path}"
   valid_case "${test_case}" || fail "알 수 없는 시험 항목: ${test_case}" 64
   expected=$(confirmation_token begin "${test_case}")
@@ -363,8 +371,10 @@ begin_case() {
 }
 
 finish_case() {
-  local manifest_path=$1 package_path=$2 record=${3:A} test_case=$4 verdict=$5 confirmation=$6
+  local manifest_path=$1 package_path=$2 record_path=$3 test_case=$4 verdict=$5 confirmation=$6
   local expected mode case_status ended end_state end_manifest_sha end_package_sha final_status result
+  [[ ! -L "${record_path}" ]] || fail "실기기 기록 경로는 심볼릭 링크일 수 없습니다" 66
+  local record=${record_path:A}
   load_candidate "${manifest_path}" "${package_path}"
   valid_case "${test_case}" || fail "알 수 없는 시험 항목: ${test_case}" 64
   [[ "${verdict}" == passed || "${verdict}" == failed ]] || fail "완료 결과는 passed 또는 failed입니다" 64
@@ -407,12 +417,14 @@ finish_case() {
 }
 
 run_case() {
-  local manifest_path=$1 package_path=$2 record=${3:A} test_case=$4 confirmation=$5
+  local manifest_path=$1 package_path=$2 record_path=$3 test_case=$4 confirmation=$5
   shift 5
   (( $# >= 1 )) || fail "실행할 절대 경로 명령이 필요합니다" 64
   local runner=${1:A} expected start_state end_state started ended start_manifest end_manifest
   local start_package end_package start_runner end_runner runner_status=0 final_status result
-  [[ "$1" == /* && -f "${runner}" && ! -L "${runner}" && -x "${runner}" ]] || \
+  [[ ! -L "${record_path}" ]] || fail "실기기 기록 경로는 심볼릭 링크일 수 없습니다" 66
+  local record=${record_path:A}
+  [[ "$1" == /* && -f "$1" && ! -L "$1" && -x "$1" ]] || \
     fail "runner는 실행 가능한 일반 파일의 절대 경로여야 합니다" 66
   load_candidate "${manifest_path}" "${package_path}"
   valid_case "${test_case}" || fail "알 수 없는 시험 항목: ${test_case}" 64
@@ -479,10 +491,11 @@ run_case() {
 }
 
 verify_record() {
-  local record test_case model macos_version created created_epoch now_epoch case_status mode started ended
+  local record_path=$3 record test_case model macos_version created created_epoch now_epoch case_status mode started ended
   local start_epoch end_epoch result runner_name start_runner end_runner
+  [[ ! -L "${record_path}" ]] || fail "실기기 기록 경로는 심볼릭 링크일 수 없습니다" 66
   load_candidate "$1" "$2"
-  record=${3:A}
+  record=${record_path:A}
   validate_record_binding "${record}"
   model=$(value "${record}" hardware.model)
   macos_version=$(value "${record}" hardware.macosVersion)

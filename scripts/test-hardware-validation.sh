@@ -138,8 +138,19 @@ expect_exit 64 "${harness[@]}" token "${manifest}" "${package}" acquireRelease b
 expect_exit 64 "${harness[@]}" token "${manifest}" "${package}" cleanInstall run
 expect_exit 64 "${harness[@]}" token "${manifest}" "${package}" helperCrash finish passed
 
+# manifest, 후보, 기록과 runner는 직접 심볼릭 링크로 바꿔치기할 수 없다.
+/bin/ln -s "${manifest}" "${test_root}/manifest-link.json"
+/bin/ln -s "${package}" "${test_root}/package-link.pkg"
+/bin/ln -s "${record}" "${test_root}/record-link.json"
+expect_exit 66 "${harness[@]}" token "${test_root}/manifest-link.json" "${package}" reboot begin
+expect_exit 66 "${harness[@]}" token "${manifest}" "${test_root}/package-link.pkg" reboot begin
+expect_exit 66 "${harness[@]}" verify "${manifest}" "${package}" "${test_root}/record-link.json"
+
 # 자동 실행은 정확한 후보별 확인 토큰 없이는 시작되지 않는다.
 run_token=$("${harness[@]}" token "${manifest}" "${package}" acquireRelease run)
+/bin/ln -s "${script_dir}/integration-test.sh" "${test_root}/integration-test-link.sh"
+expect_exit 66 "${harness[@]}" run "${manifest}" "${package}" "${record}" \
+  acquireRelease --confirm "${run_token}" -- "${test_root}/integration-test-link.sh"
 /bin/cp "${script_dir}/integration-test.sh" "${test_root}/integration-test.original"
 print -r -- '# changed after confirmation' >> "${script_dir}/integration-test.sh"
 expect_exit 77 "${harness[@]}" run "${manifest}" "${package}" "${record}" \
