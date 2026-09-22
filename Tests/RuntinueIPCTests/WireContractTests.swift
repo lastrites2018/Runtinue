@@ -6,19 +6,39 @@ import XCTest
 final class WireContractTests: XCTestCase {
   func testHelperDurationValidationRejectsNonFiniteAndOutOfRangeNumbersBeforeConversion() {
     for invalid in [Double.nan, .infinity, -.infinity, 0, -1, 91, 1e300] {
-      XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: invalid, maximumSeconds: 90))
+      XCTAssertNil(
+        RuntinueIPCContract.validatedDuration(seconds: invalid, maximumSeconds: 90)
+      )
     }
-    XCTAssertEqual(RuntinueIPCContract.validatedDuration(seconds: 0.5, maximumSeconds: 90), .milliseconds(500))
-    XCTAssertEqual(RuntinueIPCContract.validatedDuration(seconds: 90, maximumSeconds: 90), .seconds(90))
-    XCTAssertEqual(RuntinueIPCContract.validatedDuration(seconds: 86_400, maximumSeconds: 86_400), .seconds(86_400))
-    XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: 86_401, maximumSeconds: 86_400))
-    XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: 1, maximumSeconds: .nan))
-    XCTAssertNil(RuntinueIPCContract.validatedDuration(seconds: .leastNonzeroMagnitude, maximumSeconds: 90))
+    XCTAssertEqual(
+      RuntinueIPCContract.validatedDuration(seconds: 0.5, maximumSeconds: 90),
+      .milliseconds(500)
+    )
+    XCTAssertEqual(
+      RuntinueIPCContract.validatedDuration(seconds: 90, maximumSeconds: 90),
+      .seconds(90)
+    )
+    XCTAssertEqual(
+      RuntinueIPCContract.validatedDuration(seconds: 86_400, maximumSeconds: 86_400),
+      .seconds(86_400)
+    )
+    XCTAssertNil(
+      RuntinueIPCContract.validatedDuration(seconds: 86_401, maximumSeconds: 86_400)
+    )
+    XCTAssertNil(
+      RuntinueIPCContract.validatedDuration(seconds: 1, maximumSeconds: .nan)
+    )
+    XCTAssertNil(
+      RuntinueIPCContract.validatedDuration(
+        seconds: .leastNonzeroMagnitude,
+        maximumSeconds: 90
+      )
+    )
   }
 
-  func testPreviousUptimeProtocolIsRejectedAndWireNamesDeclareContinuousTime() throws {
-    XCTAssertEqual(RuntinueIPCContract.protocolVersion, 5)
-    XCTAssertFalse(RuntinueIPCContract.acceptsRequest(protocolVersion: 4, byteCount: 100))
+  func testPreviousProtocolIsRejectedAndWireNamesDeclareContinuousTime() throws {
+    XCTAssertEqual(RuntinueIPCContract.protocolVersion, 6)
+    XCTAssertFalse(RuntinueIPCContract.acceptsRequest(protocolVersion: 5, byteCount: 100))
     let status = HelperStatusWire(
       phase: .active, leaseID: UUID(), ownerUID: 501, sleepOverride: .disabled,
       ttlDeadlineContinuousNanoseconds: 10, hardDeadlineContinuousNanoseconds: 20, detail: nil
@@ -38,7 +58,8 @@ final class WireContractTests: XCTestCase {
     XCTAssertNil(try JSONDecoder().decode(SupervisorStatusWire.self, from: oldData).observation)
     let observed = legacy.withObservation(
       WireObservationStatus(
-        buildID: String(repeating: "a", count: 64), issues: [.eventsUnavailable]
+        buildID: String(repeating: "a", count: 64),
+        issues: [.eventsUnavailable, .configurationUnavailable]
       ))
     XCTAssertEqual(
       try JSONDecoder().decode(SupervisorStatusWire.self, from: JSONEncoder().encode(observed)),

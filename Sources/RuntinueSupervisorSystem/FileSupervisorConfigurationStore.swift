@@ -39,19 +39,98 @@ public actor FileSupervisorConfigurationStore: SupervisorConfigurationCaching {
   }
 
   private let fileURL: URL
+  private let setTemporaryFilePermissions: @Sendable (Int32, mode_t) -> Int32
+  private let synchronizeDirectoryDescriptor: @Sendable (Int32) -> Int32
 
   public init(fileURL: URL = FileSupervisorConfigurationStore.productionURL) {
     self.fileURL = fileURL
+    self.setTemporaryFilePermissions = { descriptor, permissions in
+      Darwin.fchmod(descriptor, permissions)
+    }
+    self.synchronizeDirectoryDescriptor = { descriptor in
+      Darwin.fsync(descriptor)
+    }
+  }
+
+  init(
+    fileURL: URL,
+    setTemporaryFilePermissions: @escaping @Sendable (Int32, mode_t) -> Int32
+  ) {
+    self.fileURL = fileURL
+    self.setTemporaryFilePermissions = setTemporaryFilePermissions
+    self.synchronizeDirectoryDescriptor = { descriptor in
+      Darwin.fsync(descriptor)
+    }
+  }
+
+  init(
+    fileURL: URL,
+    setTemporaryFilePermissions: @escaping @Sendable (Int32, mode_t) -> Int32,
+    synchronizeDirectoryDescriptor: @escaping @Sendable (Int32) -> Int32
+  ) {
+    self.fileURL = fileURL
+    self.setTemporaryFilePermissions = setTemporaryFilePermissions
+    self.synchronizeDirectoryDescriptor = synchronizeDirectoryDescriptor
   }
 
   public func save(_ configuration: PersistedSupervisorConfiguration) throws {
     try prepareDirectory()
     try rejectSymlink(at: fileURL)
     let data = try JSONEncoder().encode(configuration)
-    try data.write(to: fileURL, options: [.atomic])
-    guard chmod(fileURL.path, 0o600) == 0 else {
+    let temporaryURL = fileURL.deletingLastPathComponent().appendingPathComponent(
+      ".config.\(UUID().uuidString).tmp",
+      isDirectory: false
+    )
+    let temporaryPath = temporaryURL.path
+    var descriptor: Int32
+    repeat {
+      descriptor = Darwin.open(
+        temporaryPath,
+        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW,
+        S_IRUSR | S_IWUSR
+      )
+    } while descriptor < 0 && errno == EINTR
+    guard descriptor >= 0 else {
       throw POSIXError(.init(rawValue: errno) ?? .EIO)
     }
+    var shouldRemoveTemporaryFile = true
+    defer {
+      Darwin.close(descriptor)
+      if shouldRemoveTemporaryFile {
+        Darwin.unlink(temporaryPath)
+      }
+    }
+    guard setTemporaryFilePermissions(descriptor, S_IRUSR | S_IWUSR) == 0 else {
+      throw POSIXError(.init(rawValue: errno) ?? .EIO)
+    }
+    try data.withUnsafeBytes { rawBuffer in
+      guard let baseAddress = rawBuffer.baseAddress else {
+        return
+      }
+      var offset = 0
+      while offset < rawBuffer.count {
+        let written = Darwin.write(
+          descriptor,
+          baseAddress.advanced(by: offset),
+          rawBuffer.count - offset
+        )
+        if written < 0, errno == EINTR {
+          continue
+        }
+        guard written > 0 else {
+          throw POSIXError(.init(rawValue: errno) ?? .EIO)
+        }
+        offset += written
+      }
+    }
+    try synchronizeFileDescriptor(descriptor)
+    let directoryDescriptor = try openParentDirectory()
+    defer { Darwin.close(directoryDescriptor) }
+    guard Darwin.rename(temporaryPath, fileURL.path) == 0 else {
+      throw POSIXError(.init(rawValue: errno) ?? .EIO)
+    }
+    shouldRemoveTemporaryFile = false
+    try synchronizeParentDirectory(directoryDescriptor)
   }
 
   public func load() throws -> PersistedSupervisorConfiguration? {
@@ -74,10 +153,15 @@ public actor FileSupervisorConfigurationStore: SupervisorConfigurationCaching {
   public func remove() throws {
     try prepareDirectory()
     try rejectSymlink(at: fileURL)
-    guard FileManager.default.fileExists(atPath: fileURL.path) else {
-      return
+    let directoryDescriptor = try openParentDirectory()
+    defer { Darwin.close(directoryDescriptor) }
+    if Darwin.unlink(fileURL.path) != 0, errno != ENOENT {
+      throw POSIXError(.init(rawValue: errno) ?? .EIO)
     }
-    try FileManager.default.removeItem(at: fileURL)
+    // Sync even when the entry is already absent. A prior unlink may have
+    // succeeded before its directory fsync failed, so absence alone is not a
+    // durable cleanup result.
+    try synchronizeParentDirectory(directoryDescriptor)
   }
 
   private func prepareDirectory() throws {
@@ -103,6 +187,41 @@ public actor FileSupervisorConfigurationStore: SupervisorConfigurationCaching {
     }
     guard info.st_mode & S_IFMT != S_IFLNK else {
       throw CocoaError(.fileReadInvalidFileName)
+    }
+  }
+
+  private func openParentDirectory() throws -> Int32 {
+    let directoryPath = fileURL.deletingLastPathComponent().path
+    var descriptor: Int32
+    repeat {
+      descriptor = Darwin.open(
+        directoryPath,
+        O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+      )
+    } while descriptor < 0 && errno == EINTR
+    guard descriptor >= 0 else {
+      throw POSIXError(.init(rawValue: errno) ?? .EIO)
+    }
+    return descriptor
+  }
+
+  private func synchronizeFileDescriptor(_ descriptor: Int32) throws {
+    while Darwin.fsync(descriptor) != 0 {
+      let code = errno
+      if code == EINTR {
+        continue
+      }
+      throw POSIXError(.init(rawValue: code) ?? .EIO)
+    }
+  }
+
+  private func synchronizeParentDirectory(_ descriptor: Int32) throws {
+    while synchronizeDirectoryDescriptor(descriptor) != 0 {
+      let code = errno
+      if code == EINTR {
+        continue
+      }
+      throw POSIXError(.init(rawValue: code) ?? .EIO)
     }
   }
 }

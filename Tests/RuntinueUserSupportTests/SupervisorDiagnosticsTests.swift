@@ -45,7 +45,7 @@ final class SupervisorDiagnosticsTests: KoreanInterfaceTestCase {
             buildID: nil,
             issues: [
               .eventsUnavailable, .historyUnavailable, .buildIdentityUnavailable,
-              .statusCacheUnavailable,
+              .statusCacheUnavailable, .configurationUnavailable,
             ]))
         + [SupervisorEventSummary(events: []).text]).joined(separator: "\n")
       XCTAssertTrue(text.contains("CPU 74.0°C"))
@@ -58,6 +58,7 @@ final class SupervisorDiagnosticsTests: KoreanInterfaceTestCase {
       ).joined(separator: "\n")
       XCTAssertFalse(stale.contains("74.0°C"))
       XCTAssertTrue(stale.contains("no recent reading"))
+      XCTAssertTrue(text.contains("mode settings could not be loaded or saved safely"))
     }
   }
 

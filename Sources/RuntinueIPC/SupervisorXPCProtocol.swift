@@ -221,6 +221,7 @@ public enum WireSessionStopReason: String, Codable, Equatable, Sendable {
 
 public enum WireObservationIssue: String, Codable, Equatable, Sendable {
   case buildIdentityUnavailable
+  case configurationUnavailable
   case eventsUnavailable
   case historyUnavailable
   case statusCacheUnavailable

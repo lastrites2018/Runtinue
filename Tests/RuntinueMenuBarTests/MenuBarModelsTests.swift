@@ -463,6 +463,36 @@ final class MenuBarModelsTests: KoreanInterfaceTestCase {
     XCTAssertTrue(presentation.detail.contains("일부 기록을 저장하지 못했습니다."))
   }
 
+  func testConfigurationIssueUsesModeSpecificWarning() {
+    let presentation = MenuBarPresentation(
+      status: status(
+        verdict: .inactive,
+        closedLidAllowed: false,
+        mode: .adaptive,
+        observation: WireObservationStatus(
+          buildID: nil,
+          issues: [.configurationUnavailable]
+        ),
+        detail: "adaptive mode disable is pending configuration recovery"
+      )
+    )
+
+    XCTAssertTrue(
+      presentation.detail.contains("모드 설정을 안전하게 저장하거나 불러오지 못했습니다.")
+    )
+    XCTAssertFalse(presentation.detail.contains("일부 기록을 저장하지 못했습니다."))
+    XCTAssertTrue(presentation.detail.contains("Adaptive 모드 끄기를 마무리하지 못했습니다."))
+    XCTAssertFalse(presentation.detail.contains("활동 신호를 기다립니다."))
+    XCTAssertEqual(presentation.summary, "Adaptive 모드 끄기 복구 대기 중")
+    XCTAssertEqual(presentation.headline, "Adaptive 모드 끄기 복구 대기 중")
+    XCTAssertFalse(presentation.summary.contains("작업 활동 대기"))
+    XCTAssertEqual(presentation.tone, .attention)
+    XCTAssertEqual(
+      InterfaceStatusText.rejection("configurationUnavailable"),
+      "Adaptive 모드 설정을 안전하게 저장하지 못했습니다. 진단 정보를 확인한 뒤 다시 시도하세요."
+    )
+  }
+
   func testSupplementalDetailCannotGrowTheMenuWithoutBoundOrHideAWarning() {
     let presentation = MenuBarPresentation(
       status: status(

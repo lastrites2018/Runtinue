@@ -24,6 +24,12 @@ public enum SupervisorDiagnostics {
       case .buildIdentityUnavailable:
         lines.append(
           L("경고: Supervisor 빌드를 식별하지 못했습니다.", "Warning: could not identify the service build."))
+      case .configurationUnavailable:
+        lines.append(
+          L(
+            "경고: 모드 설정을 안전하게 저장하거나 불러오지 못했습니다. Adaptive 모드 상태를 다시 확인하세요.",
+            "Warning: mode settings could not be loaded or saved safely. Check Adaptive mode status."
+          ))
       case .eventsUnavailable:
         lines.append(
           L(

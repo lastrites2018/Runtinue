@@ -354,7 +354,8 @@ struct MenuBarPresentation: Equatable, Sendable {
       safetyChecklist = nil
       return
     }
-    let compactTimed = status.mode == .desk && status.phase == .active
+    let compactTimed =
+      status.mode == .desk && status.phase == .active
       && status.verdict == .protected && !status.closedLidAllowed
       && iconStyle == .continuationMark
     safetyChecklist = SafetyChecklistPresentation.trip(status: status)
@@ -421,14 +422,29 @@ struct MenuBarPresentation: Equatable, Sendable {
       tone = .unknown
     case .inactive:
       statusIndicator = ""
-      summary =
-        status.mode == .adaptive
-        ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 중인 모드 없음", "No active mode")
-      headline =
-        status.mode == .adaptive
-        ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 중인 모드 없음", "No active mode")
-      guidance = L("아래 메뉴에서 사용할 모드를 선택하세요.", "Choose a mode from the menu below.")
-      tone = .neutral
+      if status.mode == .adaptive,
+        status.detail == "adaptive mode disable is pending configuration recovery"
+      {
+        summary = L(
+          "Adaptive 모드 끄기 복구 대기 중",
+          "Waiting to finish turning off Adaptive mode"
+        )
+        headline = summary
+        guidance = L(
+          "진단 정보를 확인한 뒤 Adaptive 모드 끄기를 다시 시도하세요.",
+          "Check Diagnostics, then try turning off Adaptive mode again."
+        )
+        tone = .attention
+      } else {
+        summary =
+          status.mode == .adaptive
+          ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 중인 모드 없음", "No active mode")
+        headline =
+          status.mode == .adaptive
+          ? L("작업 활동 대기 중", "Waiting for task activity") : L("실행 중인 모드 없음", "No active mode")
+        guidance = L("아래 메뉴에서 사용할 모드를 선택하세요.", "Choose a mode from the menu below.")
+        tone = .neutral
+      }
     }
 
     var statusFields: [String] = []
@@ -447,7 +463,8 @@ struct MenuBarPresentation: Equatable, Sendable {
       if let thermal = status.thermalLevel {
         statusFields.append(
           L(
-            "macOS 열 압력: \(Self.thermal(thermal))", "macOS thermal pressure: \(Self.thermal(thermal))"
+            "macOS 열 압력: \(Self.thermal(thermal))",
+            "macOS thermal pressure: \(Self.thermal(thermal))"
           ))
       }
       statusFields.append(
@@ -463,9 +480,20 @@ struct MenuBarPresentation: Equatable, Sendable {
       detailLines.append(detail)
     }
     if let issues = status.observation?.issues, !issues.isEmpty {
-      detailLines.append(
-        L("일부 기록을 저장하지 못했습니다. 진단 정보를 확인하세요.", "Some records could not be saved. Check Diagnostics.")
-      )
+      if issues.contains(.configurationUnavailable) {
+        detailLines.append(
+          L(
+            "모드 설정을 안전하게 저장하거나 불러오지 못했습니다. 진단 정보를 확인하세요.",
+            "Mode settings could not be loaded or saved safely. Check Diagnostics."
+          ))
+      } else {
+        detailLines.append(
+          L(
+            "일부 기록을 저장하지 못했습니다. 진단 정보를 확인하세요.",
+            "Some records could not be saved. Check Diagnostics."
+          )
+        )
+      }
     }
     self.detail = detailLines.filter { !$0.isEmpty }.joined(separator: "\n")
   }
